@@ -1,10 +1,6 @@
 // Multi-hypothesis Klingon morphological analyser.
 //
 // For each word we generate three families of hypotheses:
-// Infrastructure (constants, suffix enumeration) is defined here;
-// verb/noun/pronoun hypothesis generators follow in subsequent commits.
-#![allow(dead_code)]
-//
 //   A. Whole-word (dictionary lookup)
 //   B. Verb (prefix + suffix chain)
 //   C. Noun (suffix chain only)
@@ -12,6 +8,9 @@
 // Suffix enumeration uses an iterative work-queue that branches at every
 // suffix-type position, producing ALL valid decompositions rather than a
 // single greedy "best" parse.
+//
+// Adjectival, number, and pronoun hypothesis generators follow in the next commit.
+#![allow(dead_code)]
 
 use crate::confidence;
 use crate::dictionary::Dictionary;
@@ -258,9 +257,11 @@ pub fn parse_word(word: &str, dict: &Dictionary) -> WordParse {
         }
     }
 
-    // B. Verb hypotheses (added in next commit).
+    // B. Verb hypotheses.
+    hypotheses.extend(verb_hypotheses(word, dict));
 
-    // C. Noun hypotheses (added in next commit).
+    // C. Noun hypotheses.
+    hypotheses.extend(noun_hypotheses(word, dict));
 
     // F. Unknown fallback (always present).
     if hypotheses.is_empty() || !hypotheses.iter().any(|h| h.parse_type == ParseType::WholeWord) {
@@ -333,6 +334,331 @@ fn resolve_stem_all(dict: &Dictionary, stem: &str, preferred_base_pos: &str) -> 
             )
         })
         .collect()
+}
+
+/// Check if a possessive suffix mismatches the stem's being/non-being status.
+/// Adds a warning if a being noun uses a non-being suffix or vice versa.
+fn check_possessive_mismatch(dict: &Dictionary, stem: &str, suffix: &str, warnings: &mut Vec<String>) {
+    let entries = match dict.lookup(stem) {
+        Some(es) => es,
+        None => return,
+    };
+
+    // Only check noun entries.
+    let noun_entries: Vec<_> = entries.iter().filter(|e| e.pos == "n").collect();
+    if noun_entries.is_empty() {
+        return;
+    }
+
+    let is_being_suffix = POSSESSIVE_BEING.contains(&suffix);
+    let stem_is_being = noun_entries.iter().any(|e| e.being);
+    let stem_is_non_being = noun_entries.iter().any(|e| !e.being);
+
+    if is_being_suffix && !stem_is_being && stem_is_non_being {
+        warnings.push(format!(
+            "-{suffix} is a being possessive but {stem} is not marked as a being"
+        ));
+    } else if !is_being_suffix && stem_is_being && !stem_is_non_being {
+        warnings.push(format!(
+            "-{suffix} is a non-being possessive but {stem} is a being capable of language; \
+             use -{} instead",
+            being_counterpart(suffix)
+        ));
+    }
+}
+
+/// Return the being counterpart of a non-being possessive suffix.
+fn being_counterpart(non_being: &str) -> &'static str {
+    match non_being {
+        "wIj" => "wI'",
+        "lIj" => "lI'",
+        "maj" => "ma'",
+        "raj" => "ra'",
+        _ => "???",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verb hypotheses
+// ---------------------------------------------------------------------------
+
+fn verb_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
+    let mut out = Vec::new();
+
+    for prefix in VERB_PREFIXES {
+        if !prefix.is_empty() && !word.starts_with(prefix) {
+            continue;
+        }
+        let remainder = if prefix.is_empty() {
+            word
+        } else {
+            &word[prefix.len()..]
+        };
+        if remainder.is_empty() {
+            continue;
+        }
+
+        let verb_suffix_types: &[&[&str]] = &[
+            VERB_TYPE9,
+            VERB_TYPE_R_REFUSAL,
+            VERB_TYPE8,
+            VERB_TYPE7,
+            VERB_TYPE6,
+            VERB_TYPE5,
+            VERB_TYPE4,
+            VERB_TYPE3,
+            VERB_TYPE2,
+            VERB_TYPE1,
+            VERB_TYPE_R_UNDO,
+        ];
+
+        let completions = enumerate_suffixes(remainder, verb_suffix_types, "v", true);
+
+        for (stem, suffixes) in completions {
+            if stem.is_empty() {
+                continue;
+            }
+            // Skip if prefix is empty and no suffixes were stripped (that is a
+            // whole-word or noun parse, not a verb parse).
+            if prefix.is_empty() && suffixes.is_empty() {
+                continue;
+            }
+
+            // Build suffix components once (shared across stem variants).
+            let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
+            let has_ghach = reversed.iter().any(|(_, m)| m.is_ghach);
+            let real_verb_suffixes = reversed
+                .iter()
+                .any(|(_, m)| !m.is_ghach && !m.is_rover);
+            let ghach_warning = if has_ghach && !real_verb_suffixes {
+                Some("-ghach used without a preceding verb suffix".to_string())
+            } else {
+                None
+            };
+            let suffix_components: Vec<Component> = reversed
+                .iter()
+                .map(|(suf_text, meta)| {
+                    let role = if meta.is_rover {
+                        MorphemeRole::Rover
+                    } else {
+                        MorphemeRole::Suffix
+                    };
+                    Component {
+                        text: suf_text.clone(),
+                        entry_name: format!("-{suf_text}"),
+                        pos: meta.pos.to_string(),
+                        homophone: None,
+                        role,
+                        sub_components: vec![],
+                    }
+                })
+                .collect();
+
+            // Generate one hypothesis per stem homophone variant.
+            let stem_variants = resolve_stem_all(dict, &stem, "v");
+            for (stem_pos, stem_homo) in stem_variants {
+                let mut components = Vec::new();
+
+                // Prefix component.
+                if !prefix.is_empty() {
+                    components.push(Component {
+                        text: prefix.to_string(),
+                        entry_name: format!("{prefix}-"),
+                        pos: "v".to_string(),
+                        homophone: None,
+                        role: MorphemeRole::Prefix,
+                        sub_components: vec![],
+                    });
+                }
+
+                // Stem component.
+                components.push(Component {
+                    text: stem.clone(),
+                    entry_name: stem.clone(),
+                    pos: stem_pos,
+                    homophone: stem_homo,
+                    role: MorphemeRole::Stem,
+                    sub_components: vec![],
+                });
+
+                // Suffix components.
+                components.extend(suffix_components.clone());
+
+                let mut warnings = Vec::new();
+                if let Some(ref w) = ghach_warning {
+                    warnings.push(w.clone());
+                }
+
+                out.push(Hypothesis {
+                    components,
+                    confidence: 0.0,
+                    parse_type: ParseType::Verb,
+                    warnings,
+                });
+            }
+        }
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Noun hypotheses
+// ---------------------------------------------------------------------------
+
+fn noun_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
+    let mut out = Vec::new();
+
+    let noun_suffix_types: &[&[&str]] = &[
+        NOUN_TYPE5, NOUN_TYPE4, NOUN_TYPE3, NOUN_TYPE2, NOUN_TYPE1,
+    ];
+
+    let completions = enumerate_suffixes(word, noun_suffix_types, "n", false);
+
+    for (stem, suffixes) in completions {
+        if stem.is_empty() || suffixes.is_empty() {
+            continue;
+        }
+
+        // Build suffix components and warnings once (shared across stem variants).
+        let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
+        let mut base_warnings = Vec::new();
+        for (suf_text, _meta) in &reversed {
+            // Check -'oy validity.
+            if suf_text == "oy" || suf_text == "'oy" {
+                if let Some(last) = stem.chars().last() {
+                    if !KLINGON_VOWELS.contains(&last) {
+                        base_warnings.push("-'oy used on stem not ending in vowel".to_string());
+                    }
+                }
+            }
+            // Check being/non-being possessive mismatch.
+            let suf_str = suf_text.as_str();
+            if POSSESSIVE_BEING.contains(&suf_str) || POSSESSIVE_NON_BEING.contains(&suf_str) {
+                check_possessive_mismatch(dict, &stem, suf_str, &mut base_warnings);
+            }
+        }
+        let suffix_components: Vec<Component> = reversed
+            .iter()
+            .map(|(suf_text, meta)| Component {
+                text: suf_text.clone(),
+                entry_name: format!("-{suf_text}"),
+                pos: meta.pos.to_string(),
+                homophone: None,
+                role: MorphemeRole::Suffix,
+                sub_components: vec![],
+            })
+            .collect();
+
+        // Generate one hypothesis per stem homophone variant.
+        let stem_variants = resolve_stem_all(dict, &stem, "n");
+        for (stem_pos, stem_homo) in stem_variants {
+            let mut components = Vec::new();
+            components.push(Component {
+                text: stem.clone(),
+                entry_name: stem.clone(),
+                pos: stem_pos,
+                homophone: stem_homo,
+                role: MorphemeRole::Stem,
+                sub_components: vec![],
+            });
+            components.extend(suffix_components.clone());
+
+            out.push(Hypothesis {
+                components,
+                confidence: 0.0,
+                parse_type: ParseType::Noun,
+                warnings: base_warnings.clone(),
+            });
+        }
+    }
+
+    // Also try the special -'oy case after regular suffix stripping.
+    // -'oy is noun type 1 but only valid when stem ends in a vowel.
+    // We handle it by checking all completions above; the oy suffix is already
+    // in NOUN_TYPE1 so it will be tried. But the apostrophe form needs special
+    // treatment: when the word fragment ends in "'oy", strip it and check if
+    // the character before the apostrophe is a vowel.
+    let oy_completions = try_special_oy(word, noun_suffix_types, dict);
+    out.extend(oy_completions);
+
+    out
+}
+
+/// Handle the special -'oy suffix where the apostrophe is part of the suffix
+/// but the stem must end in a vowel. We try stripping "'oy" after any outer
+/// noun suffixes have been stripped.
+fn try_special_oy(
+    word: &str,
+    outer_types: &[&[&str]],
+    dict: &Dictionary,
+) -> Vec<Hypothesis> {
+    let mut results = Vec::new();
+
+    // First strip outer suffixes (types 5 through 2), then check for 'oy at type 1 position.
+    // outer_types is [TYPE5, TYPE4, TYPE3, TYPE2, TYPE1], so take the first 4.
+    let outer = &outer_types[..outer_types.len().saturating_sub(1)];
+    let outer_completions = enumerate_suffixes(word, outer, "n", false);
+
+    for (remainder, outer_suffixes) in &outer_completions {
+        if remainder.ends_with("'oy") && remainder.len() > 3 {
+            let before = &remainder[..remainder.len() - 3];
+            if let Some(last) = before.chars().last() {
+                if KLINGON_VOWELS.contains(&last) && !before.is_empty() {
+                    let stem = before.to_string();
+
+                    // 'oy suffix component.
+                    let oy_component = Component {
+                        text: "'oy".to_string(),
+                        entry_name: "-'oy".to_string(),
+                        pos: "n".to_string(),
+                        homophone: None,
+                        role: MorphemeRole::Suffix,
+                        sub_components: vec![],
+                    };
+
+                    // Outer suffix components (reversed).
+                    let reversed: Vec<_> = outer_suffixes.iter().rev().cloned().collect();
+                    let outer_components: Vec<Component> = reversed
+                        .iter()
+                        .map(|(suf_text, meta)| Component {
+                            text: suf_text.clone(),
+                            entry_name: format!("-{suf_text}"),
+                            pos: meta.pos.to_string(),
+                            homophone: None,
+                            role: MorphemeRole::Suffix,
+                            sub_components: vec![],
+                        })
+                        .collect();
+
+                    // Generate one hypothesis per stem variant.
+                    let stem_variants = resolve_stem_all(dict, &stem, "n");
+                    for (stem_pos, stem_homo) in stem_variants {
+                        let mut components = Vec::new();
+                        components.push(Component {
+                            text: stem.clone(),
+                            entry_name: stem.clone(),
+                            pos: stem_pos,
+                            homophone: stem_homo,
+                            role: MorphemeRole::Stem,
+                            sub_components: vec![],
+                        });
+                        components.push(oy_component.clone());
+                        components.extend(outer_components.clone());
+
+                        results.push(Hypothesis {
+                            components,
+                            confidence: 0.0,
+                            parse_type: ParseType::Noun,
+                            warnings: vec![],
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    results
 }
 
 // ---------------------------------------------------------------------------
@@ -563,5 +889,68 @@ mod tests {
         let top = &result.hypotheses[0];
         assert_eq!(top.parse_type, ParseType::WholeWord);
         assert_eq!(top.components[0].entry_name, "Qapla'");
+    }
+
+    #[test]
+    fn test_puqpuwij_noun() {
+        let d = dict();
+        let result = parse_word("puqpu'wIj", &d);
+        // Should have a noun hypothesis with stem {puq} and suffixes {-pu'} + {-wIj}.
+        let noun = result
+            .hypotheses
+            .iter()
+            .find(|h| h.parse_type == ParseType::Noun)
+            .expect("should have noun hypothesis");
+        assert_eq!(noun.components[0].entry_name, "puq");
+        assert_eq!(noun.components[1].entry_name, "-pu'");
+        assert_eq!(noun.components[2].entry_name, "-wIj");
+    }
+
+    #[test]
+    fn test_jiyaj_verb() {
+        let d = dict();
+        let result = parse_word("jIyaj", &d);
+        let verb = result
+            .hypotheses
+            .iter()
+            .find(|h| h.parse_type == ParseType::Verb)
+            .expect("should have verb hypothesis");
+        assert_eq!(verb.components[0].entry_name, "jI-");
+        assert_eq!(verb.components[1].entry_name, "yaj");
+    }
+
+    #[test]
+    fn test_yajbequ_rovers() {
+        let d = dict();
+        let result = parse_word("yajbe'qu'", &d);
+        let verb = result
+            .hypotheses
+            .iter()
+            .find(|h| {
+                h.parse_type == ParseType::Verb
+                    && h.components.len() == 3
+                    && h.components[0].entry_name == "yaj"
+            })
+            .expect("should have verb hypothesis with rovers");
+        assert_eq!(verb.components[1].entry_name, "-be'");
+        assert_eq!(verb.components[2].entry_name, "-qu'");
+    }
+
+    #[test]
+    fn test_lolah_multiple_hypotheses() {
+        let d = dict();
+        let result = parse_word("lo'laH", &d);
+        // Should return both a WholeWord hypothesis and a verb decomposition.
+        let has_whole = result
+            .hypotheses
+            .iter()
+            .any(|h| h.parse_type == ParseType::WholeWord);
+        let has_verb = result.hypotheses.iter().any(|h| {
+            h.parse_type == ParseType::Verb
+                && h.components.iter().any(|c| c.entry_name == "lo'")
+                && h.components.iter().any(|c| c.entry_name == "-laH")
+        });
+        assert!(has_whole, "should have WholeWord for lo'laH");
+        assert!(has_verb, "should have verb decomposition lo' + -laH");
     }
 }

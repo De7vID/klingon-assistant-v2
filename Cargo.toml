@@ -1,0 +1,3 @@
+[workspace]
+members = ["kla-parser-lib"]
+resolver = "2"

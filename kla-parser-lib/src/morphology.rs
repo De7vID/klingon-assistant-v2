@@ -8,9 +8,6 @@
 // Suffix enumeration uses an iterative work-queue that branches at every
 // suffix-type position, producing ALL valid decompositions rather than a
 // single greedy "best" parse.
-//
-// Adjectival, number, and pronoun hypothesis generators follow in the next commit.
-#![allow(dead_code)]
 
 use crate::confidence;
 use crate::dictionary::Dictionary;
@@ -262,6 +259,15 @@ pub fn parse_word(word: &str, dict: &Dictionary) -> WordParse {
 
     // C. Noun hypotheses.
     hypotheses.extend(noun_hypotheses(word, dict));
+
+    // C2. Number compound hypotheses (digit + multiplier).
+    hypotheses.extend(number_hypotheses(word, dict));
+
+    // D. Adjectival verb hypotheses (verb + type-5 noun suffix).
+    hypotheses.extend(adjectival_verb_hypotheses(word, dict));
+
+    // E. Pronoun-as-copula hypotheses.
+    hypotheses.extend(pronoun_hypotheses(word, dict));
 
     // F. Unknown fallback (always present).
     if hypotheses.is_empty() || !hypotheses.iter().any(|h| h.parse_type == ParseType::WholeWord) {
@@ -662,6 +668,244 @@ fn try_special_oy(
 }
 
 // ---------------------------------------------------------------------------
+// Adjectival verb hypotheses (verb stem + optional rovers + type-5 noun suffix)
+// ---------------------------------------------------------------------------
+
+/// Generate hypotheses for verbs acting as adjectives on a preceding noun.
+/// Adjectival verbs take no prefix and no regular verb suffixes (types 1-9);
+/// only rovers ({-be'}, {-qu'}) and {-Ha'} are permitted, followed by a type-5 noun
+/// suffix ({-Daq}, {-vo'}, {-mo'}, {-vaD}, {-'e'}).
+fn adjectival_verb_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
+    let mut out = Vec::new();
+
+    for &suf in NOUN_TYPE5 {
+        if !word.ends_with(suf) || word.len() <= suf.len() {
+            continue;
+        }
+        let remainder = &word[..word.len() - suf.len()];
+
+        // Enumerate verb rover/undo combinations on the remainder.
+        let completions = enumerate_suffixes(remainder, &[VERB_TYPE_R_UNDO], "v", true);
+
+        for (stem, suffixes) in completions {
+            if stem.is_empty() {
+                continue;
+            }
+            // Skip bare stem with no verb suffixes — that would duplicate noun hypotheses.
+            // (We always have the type-5 noun suffix, so this path is still useful.)
+
+            // Build verb suffix components (reversed to innermost-first order).
+            let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
+            let suffix_components: Vec<Component> = reversed
+                .iter()
+                .map(|(suf_text, meta)| {
+                    let role = if meta.is_rover {
+                        MorphemeRole::Rover
+                    } else {
+                        MorphemeRole::Suffix
+                    };
+                    Component {
+                        text: suf_text.clone(),
+                        entry_name: format!("-{suf_text}"),
+                        pos: meta.pos.to_string(),
+                        homophone: None,
+                        role,
+                        sub_components: vec![],
+                    }
+                })
+                .collect();
+
+            // Type-5 noun suffix component.
+            let type5_component = Component {
+                text: suf.to_string(),
+                entry_name: format!("-{suf}"),
+                pos: "n".to_string(),
+                homophone: None,
+                role: MorphemeRole::Suffix,
+                sub_components: vec![],
+            };
+
+            // Generate one hypothesis per stem homophone variant.
+            let stem_variants = resolve_stem_all(dict, &stem, "v");
+            for (stem_pos, stem_homo) in stem_variants {
+                let mut components = Vec::new();
+                components.push(Component {
+                    text: stem.clone(),
+                    entry_name: stem.clone(),
+                    pos: stem_pos,
+                    homophone: stem_homo,
+                    role: MorphemeRole::Stem,
+                    sub_components: vec![],
+                });
+                components.extend(suffix_components.clone());
+                components.push(type5_component.clone());
+
+                out.push(Hypothesis {
+                    components,
+                    confidence: 0.0,
+                    parse_type: ParseType::Adjectival,
+                    warnings: vec![],
+                });
+            }
+        }
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Number compound hypotheses
+// ---------------------------------------------------------------------------
+
+/// Decompose a number compound into digit + multiplier components.
+/// e.g., {loSmaH} → {loS:n} + {maH:n}.
+fn number_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
+    let mut out = Vec::new();
+
+    for &mult in NUMBER_MULTIPLIERS {
+        if !word.ends_with(mult) || word.len() <= mult.len() {
+            continue;
+        }
+        let prefix = &word[..word.len() - mult.len()];
+        if !NUMBER_DIGITS.contains(&prefix) {
+            continue;
+        }
+
+        // Both parts are valid number elements. Generate hypotheses
+        // for each homophone combination.
+        let digit_variants = resolve_stem_all(dict, prefix, "n");
+        let mult_variants = resolve_stem_all(dict, mult, "n");
+
+        for (d_pos, d_homo) in &digit_variants {
+            for (m_pos, m_homo) in &mult_variants {
+                out.push(Hypothesis {
+                    components: vec![
+                        Component {
+                            text: prefix.to_string(),
+                            entry_name: prefix.to_string(),
+                            pos: d_pos.clone(),
+                            homophone: *d_homo,
+                            role: MorphemeRole::Stem,
+                            sub_components: vec![],
+                        },
+                        Component {
+                            text: mult.to_string(),
+                            entry_name: mult.to_string(),
+                            pos: m_pos.clone(),
+                            homophone: *m_homo,
+                            role: MorphemeRole::Stem,
+                            sub_components: vec![],
+                        },
+                    ],
+                    confidence: 0.0,
+                    parse_type: ParseType::Noun,
+                    warnings: vec![],
+                });
+            }
+        }
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Pronoun-as-copula hypotheses
+// ---------------------------------------------------------------------------
+
+/// Generate hypotheses for pronouns acting as copular verbs with verb suffixes.
+/// Copular pronouns take no prefix, exclude Type 1 (-'egh, -chuq), and only
+/// allow -laH from Type 5.
+fn pronoun_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
+    let mut out = Vec::new();
+
+    let copula_suffix_types: &[&[&str]] = &[
+        VERB_TYPE9,
+        VERB_TYPE_R_REFUSAL,
+        VERB_TYPE8,
+        VERB_TYPE7,
+        VERB_TYPE6,
+        COPULA_TYPE5,
+        VERB_TYPE4,
+        VERB_TYPE3,
+        VERB_TYPE2,
+        // No Type 1 (-'egh, -chuq): reflexive/reciprocal incompatible with pronouns.
+        VERB_TYPE_R_UNDO,
+    ];
+
+    let completions = enumerate_suffixes(word, copula_suffix_types, "v", true);
+
+    for (stem, suffixes) in completions {
+        // Only consider stems that are one of the 8 pronouns.
+        if !PRONOUNS.contains(&stem.as_str()) {
+            continue;
+        }
+        // Require at least one suffix; bare pronouns are handled by whole-word lookup.
+        if suffixes.is_empty() {
+            continue;
+        }
+
+        // Build suffix components (shared across stem variants).
+        let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
+        let has_ghach = reversed.iter().any(|(_, m)| m.is_ghach);
+        let real_verb_suffixes = reversed
+            .iter()
+            .any(|(_, m)| !m.is_ghach && !m.is_rover);
+        let ghach_warning = if has_ghach && !real_verb_suffixes {
+            Some("-ghach used without a preceding verb suffix".to_string())
+        } else {
+            None
+        };
+        let suffix_components: Vec<Component> = reversed
+            .iter()
+            .map(|(suf_text, meta)| {
+                let role = if meta.is_rover {
+                    MorphemeRole::Rover
+                } else {
+                    MorphemeRole::Suffix
+                };
+                Component {
+                    text: suf_text.clone(),
+                    entry_name: format!("-{suf_text}"),
+                    pos: meta.pos.to_string(),
+                    homophone: None,
+                    role,
+                    sub_components: vec![],
+                }
+            })
+            .collect();
+
+        // Resolve stem POS from noun entries (pronouns are nouns).
+        let stem_variants = resolve_stem_all(dict, &stem, "n");
+        for (stem_pos, stem_homo) in stem_variants {
+            let mut components = Vec::new();
+            components.push(Component {
+                text: stem.clone(),
+                entry_name: stem.clone(),
+                pos: stem_pos,
+                homophone: stem_homo,
+                role: MorphemeRole::Stem,
+                sub_components: vec![],
+            });
+            components.extend(suffix_components.clone());
+
+            let mut warnings = Vec::new();
+            if let Some(ref w) = ghach_warning {
+                warnings.push(w.clone());
+            }
+
+            out.push(Hypothesis {
+                components,
+                confidence: 0.0,
+                parse_type: ParseType::Pronoun,
+                warnings,
+            });
+        }
+    }
+
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Generic suffix enumeration (work-queue approach)
 // ---------------------------------------------------------------------------
 
@@ -952,5 +1196,26 @@ mod tests {
         });
         assert!(has_whole, "should have WholeWord for lo'laH");
         assert!(has_verb, "should have verb decomposition lo' + -laH");
+    }
+
+    #[test]
+    fn test_jihbe_pronoun_copula() {
+        let d = dict();
+        let result = parse_word("jIHbe'", &d);
+        // Should have a pronoun-as-copula hypothesis: {jIH} + {-be'} ("I am not").
+        let pronoun = result
+            .hypotheses
+            .iter()
+            .find(|h| h.parse_type == ParseType::Pronoun)
+            .expect("should have pronoun-as-copula hypothesis");
+        assert_eq!(pronoun.components[0].entry_name, "jIH");
+        assert_eq!(pronoun.components[1].entry_name, "-be'");
+        // Should rank above the verb reading ({jIH:v} "monitor" + {-be'}).
+        let top = &result.hypotheses[0];
+        assert_eq!(
+            top.parse_type,
+            ParseType::Pronoun,
+            "pronoun-as-copula should be the top hypothesis"
+        );
     }
 }

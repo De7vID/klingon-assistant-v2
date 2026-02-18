@@ -305,6 +305,8 @@ fn corpus_training() {
         }
     }
 
+    // Ensure the training corpus is non-empty so this test can detect regressions.
+    assert!(total > 0, "no training corpus sentences found");
     // We don't assert 100% right away — this lets us see the accuracy rate.
     // Uncomment the assert once accuracy is acceptable:
     // assert!(any_pct >= 80.0, "accuracy {any_pct:.1}% below 80%");

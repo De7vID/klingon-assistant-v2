@@ -196,7 +196,8 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
 }
 
 /// Compare two hypotheses for sorting (best first).
-/// Ties broken by: fewer affixes > WholeWord > Verb > Pronoun > Noun > alphabetical.
+/// Ties broken by: fewer components (parsimony) > parse type enum order
+/// (WholeWord < Verb < Adjectival < Pronoun < Noun < Unknown) > alphabetical.
 pub fn compare(a: &Hypothesis, b: &Hypothesis) -> Ordering {
     // Higher confidence first.
     b.confidence
@@ -207,7 +208,7 @@ pub fn compare(a: &Hypothesis, b: &Hypothesis) -> Ordering {
             a.components.len().cmp(&b.components.len())
         })
         .then_with(|| {
-            // Parse type preference: WholeWord < Verb < Noun < Unknown.
+            // Parse type preference by enum declaration order.
             a.parse_type.cmp(&b.parse_type)
         })
         .then_with(|| {

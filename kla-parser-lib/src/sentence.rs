@@ -412,10 +412,15 @@ fn add_split_hypotheses(wp: &mut WordParse, window: &[String], dict: &Dictionary
             .iter()
             .flat_map(|h| h.warnings.clone())
             .collect();
+        // Derive parse_type from the first underlying hypothesis; fall back to Noun.
+        let parse_type = combo
+            .first()
+            .map(|h| h.parse_type)
+            .unwrap_or(ParseType::Noun);
         let mut merged = Hypothesis {
             components,
             confidence: 0.0,
-            parse_type: ParseType::Noun,
+            parse_type,
             warnings,
         };
         merged.confidence = confidence::score(&merged, dict);
@@ -470,7 +475,7 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
             let mut hypothesis = Hypothesis {
                 components,
                 confidence: 0.0,
-                parse_type: ParseType::Noun,
+                parse_type: hyp.parse_type,
                 warnings: hyp.warnings.clone(),
             };
             hypothesis.confidence = confidence::score(&hypothesis, dict);

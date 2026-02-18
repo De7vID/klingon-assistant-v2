@@ -48,46 +48,50 @@ fn main() {
     }
 }
 
+/// Strip trailing punctuation from a single word, matching the same set of
+/// characters that `split_sentence` in the library strips.
+fn strip_trailing_punct(word: &str) -> &str {
+    word.trim_end_matches(['.', '!', '?', ',', ';'])
+}
+
 fn process_line(line: &str, dict: &Dictionary, cli: &Cli) {
-    // Determine whether this is a sentence (contains whitespace) or a single word.
-    let has_spaces = line.trim().contains(' ');
+    // Determine whether this is a sentence (multiple words) or a single word.
+    let is_sentence = line.split_whitespace().count() > 1;
 
     if cli.bracketed {
-        if has_spaces {
+        if is_sentence {
             let parse = parse_sentence(line, dict);
             println!(
                 "{}",
                 kla_parser_lib::output::sentence_to_bracketed(&parse)
             );
         } else {
-            let word = line.trim().trim_end_matches(|c: char| matches!(c, '.' | '!' | '?'));
+            let word = strip_trailing_punct(line.trim());
             let wp = parse_word(word, dict);
             if let Some(h) = wp.hypotheses.first() {
                 println!("{}", kla_parser_lib::output::to_bracketed(h));
             }
         }
-    } else {
-        if has_spaces {
-            let parse = parse_sentence(line, dict);
-            // Trim hypotheses per the --top / --all flags.
-            let trimmed = trim_sentence_parse(parse, cli);
-            let json = if cli.pretty {
-                serde_json::to_string_pretty(&trimmed)
-            } else {
-                serde_json::to_string(&trimmed)
-            };
-            println!("{}", json.expect("JSON serialization failed"));
+    } else if is_sentence {
+        let parse = parse_sentence(line, dict);
+        // Trim hypotheses per the --top / --all flags.
+        let trimmed = trim_sentence_parse(parse, cli);
+        let json = if cli.pretty {
+            serde_json::to_string_pretty(&trimmed)
         } else {
-            let word = line.trim().trim_end_matches(|c: char| matches!(c, '.' | '!' | '?'));
-            let wp = parse_word(word, dict);
-            let trimmed = trim_word_parse(wp, cli);
-            let json = if cli.pretty {
-                serde_json::to_string_pretty(&trimmed)
-            } else {
-                serde_json::to_string(&trimmed)
-            };
-            println!("{}", json.expect("JSON serialization failed"));
-        }
+            serde_json::to_string(&trimmed)
+        };
+        println!("{}", json.expect("JSON serialization failed"));
+    } else {
+        let word = strip_trailing_punct(line.trim());
+        let wp = parse_word(word, dict);
+        let trimmed = trim_word_parse(wp, cli);
+        let json = if cli.pretty {
+            serde_json::to_string_pretty(&trimmed)
+        } else {
+            serde_json::to_string(&trimmed)
+        };
+        println!("{}", json.expect("JSON serialization failed"));
     }
 }
 

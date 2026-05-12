@@ -82,7 +82,7 @@ const NUMBER_MULTIPLIERS: &[&str] = &[
 /// Parse a dictionary components string (e.g., "{nuH:n:1}, {-mey:n}") into a
 /// Vec<Component>. Skips entries containing " or " (ambiguous alternative
 /// analyses) and entries with non-standard notation.
-fn parse_components_str(components: &str) -> Vec<Component> {
+pub(crate) fn parse_components_str(components: &str) -> Vec<Component> {
     // Skip ambiguous entries with alternative analyses.
     if components.contains(" or ") {
         return vec![];

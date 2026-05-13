@@ -90,11 +90,33 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                 if pos_raw.starts_with("sen:") {
                     // Sentence entry. Skip templates — they have placeholders
                     // that cannot be parsed without being filled in.
-                    if !components.is_empty() && !pos_raw.contains("tmpl") && !pos_raw.contains("archaic") {
-                        sentences.push(SentenceRaw {
-                            entry_name: entry_name.clone(),
-                            components: components.clone(),
-                        });
+                    if !pos_raw.contains("tmpl") && !pos_raw.contains("archaic") {
+                        if !components.is_empty() {
+                            sentences.push(SentenceRaw {
+                                entry_name: entry_name.clone(),
+                                components: components.clone(),
+                            });
+                        }
+                        // Multi-word sentence entries are also exposed as
+                        // whole-word lookups so the compound matcher in
+                        // parse_sentence can find them when they appear inside
+                        // a larger sentence (e.g. {tlhIngan maH!:sen}).
+                        // Single-word sentences are left out — they should
+                        // decompose morphologically rather than match as a
+                        // single sen wholeword.
+                        if entry_name.contains(' ') {
+                            entries.push(DictEntryRaw {
+                                name: entry_name.clone(),
+                                pos: "sen".to_string(),
+                                canonical_pos: "sen".to_string(),
+                                homophone: 0,
+                                being: false,
+                                letter: false,
+                                slang: false,
+                                stative: false,
+                                components: components.clone(),
+                            });
+                        }
                     }
                 } else if !is_affix(&pos_raw) {
                     // Dictionary stem entry.

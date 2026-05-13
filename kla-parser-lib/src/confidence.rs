@@ -37,6 +37,10 @@ const CORPUS_FREQ_PER_OCCURRENCE: f64 = 0.1;
 // prefer the POS readings that actually appear in annotated sentences (e.g.,
 // {'ej:conj} over the archaic {'ej:n:hyp}).
 const POS_FREQ_PER_OCCURRENCE: f64 = 0.1;
+// Counts at or below this threshold contribute no POS bonus. Suppresses weak
+// signals — e.g. `wej:n=2` vs `wej:adv=1` should not bias toward `n`, but
+// `'ej:conj=9` vs `'ej:n=0` still produces a clear preference.
+const POS_FREQ_BASELINE: u32 = 2;
 // Type-2 noun suffixes (plurals) that mark a whole-word entry as transparent.
 const NOUN_PLURAL_SUFFIXES: &[&str] = &["-mey", "-pu'", "-Du'"];
 // Prefixes that never take a direct object (intransitive only).
@@ -193,7 +197,8 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
             .next()
             .unwrap_or(&stem.pos);
         let pos_freq = dict.pos_frequency(&stem.entry_name, base_pos);
-        s += pos_freq.min(10) as f64 * POS_FREQ_PER_OCCURRENCE;
+        s += pos_freq.saturating_sub(POS_FREQ_BASELINE).min(10) as f64
+            * POS_FREQ_PER_OCCURRENCE;
     }
 
     // Warning-based penalties.

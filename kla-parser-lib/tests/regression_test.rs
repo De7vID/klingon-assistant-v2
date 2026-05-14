@@ -266,7 +266,7 @@ fn suvwi_whole_word_preserved() {
     let d = dict();
     let result = parse_word("SuvwI'", &d);
     // {SuvwI'} (warrior) is a genuine whole-word entry and should NOT be
-    // deprioritised — its last sub_component is {-wI'}, not a plural suffix.
+    // deprioritised - its last sub_component is {-wI'}, not a plural suffix.
     let top = &result.hypotheses[0];
     assert_eq!(
         top.parse_type,
@@ -290,7 +290,7 @@ fn qagh_hoh_verb_after_noun() {
 
 #[test]
 fn pronoun_after_noun_stays_noun() {
-    // {tlhIngan jIH} = "I am a Klingon" — {jIH} is a pronoun-as-copula, not a verb.
+    // {tlhIngan jIH} = "I am a Klingon" - {jIH} is a pronoun-as-copula, not a verb.
     let d = dict();
     let parse = kla_parser_lib::parse_sentence("tlhIngan jIH", &d);
     let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
@@ -299,7 +299,7 @@ fn pronoun_after_noun_stays_noun() {
 
 #[test]
 fn noun_after_number_stays_noun() {
-    // {wa' ram} = "one night" — {ram} is "night" (noun), not "be trivial" (verb).
+    // {wa' ram} = "one night" - {ram} is "night" (noun), not "be trivial" (verb).
     let d = dict();
     let parse = kla_parser_lib::parse_sentence("wa' ram", &d);
     let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
@@ -308,7 +308,7 @@ fn noun_after_number_stays_noun() {
 
 #[test]
 fn noun_after_possessive_stays_noun() {
-    // {Hab SoSlI' Quch} = "Your mother has a smooth forehead" — {Quch} is
+    // {Hab SoSlI' Quch} = "Your mother has a smooth forehead" - {Quch} is
     // "forehead" (noun), not "be happy" (verb), after the possessive NP {SoSlI'}.
     let d = dict();
     let parse = kla_parser_lib::parse_sentence("Hab SoSlI' Quch", &d);
@@ -322,7 +322,7 @@ fn noun_after_possessive_stays_noun() {
 
 #[test]
 fn je_sentence_final_is_conj() {
-    // {beqDaj je} at end of sentence = "and his/her crew" — conjunction, not adverb.
+    // {beqDaj je} at end of sentence = "and his/her crew" - conjunction, not adverb.
     let d = dict();
     let parse = kla_parser_lib::parse_sentence("quv lughaj beqDaj je", &d);
     let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
@@ -352,7 +352,7 @@ fn wej_after_number_is_noun() {
 
 #[test]
 fn wej_before_verb_stays_adverb() {
-    // {wej Sop} = "S/he does not yet eat" — {wej:adv} ("not yet") rather
+    // {wej Sop} = "S/he does not yet eat" - {wej:adv} ("not yet") rather
     // than {wej:n:num} ("three"). Guards the POS_FREQ_BASELINE in
     // confidence scoring: without the baseline, a marginal corpus POS
     // count for {wej:n} (~2) would beat {wej:adv} (~1) and flip the
@@ -378,6 +378,23 @@ fn hyphenated_number_prefers_num() {
 // ---------------------------------------------------------------------------
 // Prefix-transitivity disambiguation
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Multi-word dictionary entries inside larger sentences
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sentence_entry_with_punctuation_matches_inside_input() {
+    // {tlhIngan maH!:sen} is a sentence entry whose entry_name carries the
+    // trailing {!}. When it appears as a leading clause inside a larger
+    // input ({tlhIngan maH! taHjaj!}), the compound matcher should retry
+    // the lookup with the stripped punctuation re-appended, and the result
+    // should not treat the entire input as one compound.
+    let d = dict();
+    let parse = kla_parser_lib::parse_sentence("tlhIngan maH! taHjaj!", &d);
+    let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
+    assert_eq!(bracketed, "{tlhIngan maH!:sen}, {taH:v:1}, {-jaj:v}");
+}
 
 #[test]
 fn wipustah_transitive_homophone() {

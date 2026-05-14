@@ -37,6 +37,11 @@ const CORPUS_FREQ_PER_OCCURRENCE: f64 = 0.1;
 // prefer the POS readings that actually appear in annotated sentences (e.g.,
 // {'ej:conj} over the archaic {'ej:n:hyp}).
 const POS_FREQ_PER_OCCURRENCE: f64 = 0.1;
+// Bonus for whole-word entries whose name is a multi-word compound. The
+// dictionary has explicitly registered the compound as a unit, so prefer it
+// over a split into corpus-frequent constituents (e.g., {may' ta:n} over
+// {may':n}, {ta:n}). Sized to outweigh the maximum constituent POS bonus.
+const COMPOUND_WHOLE_WORD_BONUS: f64 = 2.0;
 // Counts at or below this threshold contribute no POS bonus. Suppresses weak
 // signals — e.g. `wej:n=2` vs `wej:adv=1` should not bias toward `n`, but
 // `'ej:conj=9` vs `'ej:n=0` still produces a clear preference.
@@ -123,6 +128,13 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
             s += TRANSPARENT_PLURAL_PENALTY;
         } else {
             s += WHOLE_WORD_BONUS;
+        }
+
+        // Multi-word compound entries get an extra bump so the explicit
+        // registration in the dictionary outranks a split into individually
+        // corpus-frequent constituents.
+        if stem_name.contains(' ') {
+            s += COMPOUND_WHOLE_WORD_BONUS;
         }
 
         // Question words are almost always the intended reading when standalone.

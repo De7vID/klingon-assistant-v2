@@ -8,7 +8,7 @@ use crate::types::*;
 /// Parse a Klingon sentence into morphological components.
 /// Tries multi-word dictionary lookups before falling back to single-word parsing.
 pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
-    let words = split_sentence(input);
+    let (words, trailing_punct) = split_sentence(input);
     let mut word_parses = Vec::new();
     let mut i = 0;
 
@@ -20,9 +20,38 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
                 continue;
             }
 
-            // Exact compound match.
-            let compound = words[i..i + window].join(" ");
-            if dict.contains(&compound) {
+            // Don't treat the entire input as a single compound: multi-word
+            // dictionary entries are referenced as compounds only inside a
+            // larger sentence (e.g., {tlhIngan Hol:n}, {tlhIngan maH!:sen}).
+            // Used standalone they decompose, mirroring the entry's own
+            // components field ({tlhIngan Hol} → {tlhIngan:n}, {Hol:n}).
+            let spans_whole_input = i == 0 && i + window == words.len();
+
+            // Exact compound match. If the bare lookup misses, retry with the
+            // punctuation that was stripped from the window's last word — some
+            // entries (notably {tlhIngan maH!:sen}) store the trailing
+            // punctuation in their entry_name. Only retry when the window
+            // ends inside the input; otherwise the punctuation is the
+            // sentence's own terminator, not part of the entry name.
+            let bare = words[i..i + window].join(" ");
+            let reaches_input_end = i + window == words.len();
+            let compound = if !spans_whole_input && dict.contains(&bare) {
+                Some(bare)
+            } else if !reaches_input_end {
+                if let Some(p) = trailing_punct[i + window - 1] {
+                    let with_punct = format!("{bare}{p}");
+                    if dict.contains(&with_punct) {
+                        Some(with_punct)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(compound) = compound {
                 let mut wp = morphology::parse_word(&compound, dict);
                 // Also add "split" hypotheses from parsing each word individually,
                 // so both the compound and decomposed forms are available.
@@ -584,18 +613,30 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
 
 /// Split a sentence into words, handling punctuation correctly.
 /// Apostrophe (') is NEVER treated as punctuation — it is a Klingon letter.
-fn split_sentence(input: &str) -> Vec<String> {
+///
+/// Returns both the stripped words and, for each, the trailing punctuation
+/// that was removed (or None). The punctuation is preserved so callers can
+/// retry dictionary lookups for entries that include it in their name (e.g.
+/// `{tlhIngan maH!:sen}`).
+fn split_sentence(input: &str) -> (Vec<String>, Vec<Option<char>>) {
     input
         .trim()
         .split_whitespace()
-        .map(|w| {
-            // Strip trailing punctuation (period, comma, exclamation, question,
-            // semicolon) but NEVER strip apostrophe — it is a Klingon letter.
-            let w = w.trim_end_matches(|c: char| matches!(c, '.' | '!' | '?' | ',' | ';'));
-            w.to_string()
+        .filter_map(|w| {
+            let punct = w
+                .chars()
+                .last()
+                .filter(|c| matches!(c, '.' | '!' | '?' | ',' | ';'));
+            let stripped = w
+                .trim_end_matches(|c: char| matches!(c, '.' | '!' | '?' | ',' | ';'))
+                .to_string();
+            if stripped.is_empty() {
+                None
+            } else {
+                Some((stripped, punct))
+            }
         })
-        .filter(|w| !w.is_empty())
-        .collect()
+        .unzip()
 }
 
 #[cfg(test)]
@@ -604,30 +645,29 @@ mod tests {
 
     #[test]
     fn test_split_simple() {
-        assert_eq!(
-            split_sentence("batlh bIHeghjaj."),
-            vec!["batlh", "bIHeghjaj"]
-        );
+        let (words, punct) = split_sentence("batlh bIHeghjaj.");
+        assert_eq!(words, vec!["batlh", "bIHeghjaj"]);
+        assert_eq!(punct, vec![None, Some('.')]);
     }
 
     #[test]
     fn test_split_preserves_apostrophe() {
-        assert_eq!(split_sentence("Qapla'"), vec!["Qapla'"]);
+        let (words, punct) = split_sentence("Qapla'");
+        assert_eq!(words, vec!["Qapla'"]);
+        assert_eq!(punct, vec![None]);
     }
 
     #[test]
     fn test_split_strips_comma() {
-        assert_eq!(
-            split_sentence("wo', Hegh"),
-            vec!["wo'", "Hegh"]
-        );
+        let (words, punct) = split_sentence("wo', Hegh");
+        assert_eq!(words, vec!["wo'", "Hegh"]);
+        assert_eq!(punct, vec![Some(','), None]);
     }
 
     #[test]
     fn test_split_multiple_punctuation() {
-        assert_eq!(
-            split_sentence("tlhIngan maH!"),
-            vec!["tlhIngan", "maH"]
-        );
+        let (words, punct) = split_sentence("tlhIngan maH!");
+        assert_eq!(words, vec!["tlhIngan", "maH"]);
+        assert_eq!(punct, vec![None, Some('!')]);
     }
 }

@@ -392,14 +392,19 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
         // course") - prefer the stative verb reading explicitly so a
         // non-stative homophone doesn't win on confidence alone.
         if i + 1 < parses.len() {
+            // Mirror `prefer_verb`: only Verb or WholeWord-with-verb-stem
+            // hypotheses count as "the next word is a verb". Adjectival
+            // hypotheses also start with a verb stem POS but are noun-headed
+            // in context, so they should not trigger the N-X-V noun-promotion.
             let next_is_verb = parses[i + 1]
                 .hypotheses
                 .first()
                 .map_or(false, |h| {
                     h.parse_type == ParseType::Verb
-                        || h.components
-                            .first()
-                            .map_or(false, |c| c.pos.starts_with("v"))
+                        || (h.parse_type == ParseType::WholeWord
+                            && h.components
+                                .first()
+                                .map_or(false, |c| c.pos.starts_with("v")))
                 });
             if next_is_verb {
                 if has_stative_verb_reading(&parses[i], dict) {

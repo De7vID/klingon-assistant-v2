@@ -33,6 +33,10 @@ const STATIVE_IMPERATIVE_PREFIX: f64 = -3.0;
 // Corpus frequency bonus per annotated occurrence of a homophone. Small enough
 // not to override grammar-based scoring, large enough to break ties.
 const CORPUS_FREQ_PER_OCCURRENCE: f64 = 0.1;
+// Same idea, but per occurrence of the base POS for a stem. Lets the parser
+// prefer the POS readings that actually appear in annotated sentences (e.g.,
+// {'ej:conj} over the archaic {'ej:n:hyp}).
+const POS_FREQ_PER_OCCURRENCE: f64 = 0.1;
 // Type-2 noun suffixes (plurals) that mark a whole-word entry as transparent.
 const NOUN_PLURAL_SUFFIXES: &[&str] = &["-mey", "-pu'", "-Du'"];
 // Prefixes that never take a direct object (intransitive only).
@@ -177,6 +181,19 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
             let freq = dict.homophone_frequency(&stem.entry_name, homo);
             s += freq.min(10) as f64 * CORPUS_FREQ_PER_OCCURRENCE;
         }
+        // POS frequency bonus: prefer base POS readings that appear more often
+        // in annotated sentences. Breaks ties between e.g. {'ej:conj} (common)
+        // and {'ej:n} (archaic).
+        let base_pos = stem
+            .pos
+            .split(':')
+            .next()
+            .unwrap_or(&stem.pos)
+            .split(',')
+            .next()
+            .unwrap_or(&stem.pos);
+        let pos_freq = dict.pos_frequency(&stem.entry_name, base_pos);
+        s += pos_freq.min(10) as f64 * POS_FREQ_PER_OCCURRENCE;
     }
 
     // Warning-based penalties.

@@ -11,6 +11,13 @@ pub struct Dictionary {
     /// Corpus-derived frequency counts: (stem, homophone) → occurrence count.
     /// Built at init time by parsing annotated sentence components.
     homophone_freq: HashMap<String, HashMap<u8, u32>>,
+    /// Corpus-derived frequency counts: (stem, base_pos) → occurrence count.
+    /// Lets the parser prefer the POS readings that actually occur in
+    /// annotated sentences (e.g., {'ej:conj} over the archaic {'ej:n:hyp}).
+    pos_freq: HashMap<String, HashMap<String, u32>>,
+    /// Map from sentence entry_name to its annotated components string.
+    /// Used to short-circuit parsing for sentences already in the dictionary.
+    canonical_components: HashMap<String, String>,
 }
 
 impl Dictionary {
@@ -28,11 +35,20 @@ impl Dictionary {
         }
 
         let homophone_freq = build_homophone_freq(&data.sentences);
+        let pos_freq = build_pos_freq(&data.sentences);
+        let canonical_components = data
+            .sentences
+            .iter()
+            .filter(|s| !s.components.is_empty())
+            .map(|s| (s.entry_name.clone(), s.components.clone()))
+            .collect();
 
         Self {
             entries,
             sentences: data.sentences,
             homophone_freq,
+            pos_freq,
+            canonical_components,
         }
     }
 
@@ -67,6 +83,23 @@ impl Dictionary {
             .copied()
             .unwrap_or(0)
     }
+
+    /// Look up how often a specific base POS appears for this stem in the
+    /// annotated corpus. `base_pos` is the leading segment of the POS field
+    /// (e.g., `"conj"`, `"n"`, `"v"`), without subtype tags or homophones.
+    pub fn pos_frequency(&self, stem: &str, base_pos: &str) -> u32 {
+        self.pos_freq
+            .get(stem)
+            .and_then(|m| m.get(base_pos))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Return the annotated components for a sentence whose `entry_name`
+    /// exactly matches `input`, if such an entry exists.
+    pub fn canonical_components(&self, input: &str) -> Option<&str> {
+        self.canonical_components.get(input).map(|s| s.as_str())
+    }
 }
 
 /// Build a frequency table of homophone occurrences from annotated sentence
@@ -78,6 +111,21 @@ fn build_homophone_freq(sentences: &[SentenceEntry]) -> HashMap<String, HashMap<
         for token in sent.components.split(", ") {
             if let Some((word, homo)) = extract_homophone(token.trim()) {
                 *freq.entry(word).or_default().entry(homo).or_insert(0) += 1;
+            }
+        }
+    }
+    freq
+}
+
+/// Build a frequency table of (stem, base POS) occurrences from annotated
+/// sentence components. Subtype tags (pro, num, name, hyp, ...) and homophone
+/// indices are stripped; only the base POS (`conj`, `n`, `v`, ...) is kept.
+fn build_pos_freq(sentences: &[SentenceEntry]) -> HashMap<String, HashMap<String, u32>> {
+    let mut freq: HashMap<String, HashMap<String, u32>> = HashMap::new();
+    for sent in sentences {
+        for token in sent.components.split(", ") {
+            if let Some((word, base_pos)) = extract_base_pos(token.trim()) {
+                *freq.entry(word).or_default().entry(base_pos).or_insert(0) += 1;
             }
         }
     }
@@ -117,6 +165,32 @@ fn extract_homophone(token: &str) -> Option<(String, u8)> {
         return None;
     }
     Some((word.to_string(), homo))
+}
+
+/// Extract (word, base_pos) from a bracketed component. Returns None for
+/// affixes or sentence references.
+fn extract_base_pos(token: &str) -> Option<(String, String)> {
+    let inner = token.strip_prefix('{')?.strip_suffix('}')?;
+    if inner.starts_with('-') || inner.starts_with("...") {
+        return None;
+    }
+    let colon = inner.find(':')?;
+    let word = &inner[..colon];
+    if word.ends_with('-') {
+        return None;
+    }
+    let pos_part = &inner[colon + 1..];
+    // The base POS is the first colon-/comma-separated segment.
+    let base = pos_part
+        .split(':')
+        .next()?
+        .split(',')
+        .next()?
+        .to_string();
+    if base == "sen" {
+        return None;
+    }
+    Some((word.to_string(), base))
 }
 
 impl Default for Dictionary {

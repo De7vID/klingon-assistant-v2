@@ -80,9 +80,96 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
     // Post-process: {pagh} between two verbs → conjunction "or".
     prefer_conj_pagh(&mut word_parses);
 
+    // Post-process: when the input exactly matches an annotated sentence in
+    // the dictionary, promote each surface word's hypothesis whose stem matches
+    // the canonical components.
+    prefer_canonical_components(&mut word_parses, input, dict);
+
     SentenceParse {
         input: input.to_string(),
         words: word_parses,
+    }
+}
+
+/// If `input` matches a dictionary sentence entry with annotated `components`,
+/// promote the hypothesis on each word whose stem matches the canonical entry
+/// for that surface word.
+///
+/// Multi-word noun phrases (e.g. `{puq poH:n}` covering two surface words)
+/// can't be aligned to per-word hypotheses, so this step only fires when the
+/// canonical stems align one-to-one with surface words.
+fn prefer_canonical_components(parses: &mut [WordParse], input: &str, dict: &Dictionary) {
+    let Some(components) = dict.canonical_components(input) else {
+        return;
+    };
+    let stems = extract_canonical_stems(components);
+    if stems.len() != parses.len() {
+        return;
+    }
+    for (wp, (entry_name, base_pos)) in parses.iter_mut().zip(stems.iter()) {
+        promote_stem_match(wp, entry_name, base_pos);
+    }
+}
+
+/// Walk through a bracketed components string and return one (entry_name,
+/// base_pos) tuple per stem (skipping prefixes and suffixes).
+fn extract_canonical_stems(components: &str) -> Vec<(String, String)> {
+    let mut stems = Vec::new();
+    for token in components.split(", ") {
+        let token = token.trim();
+        let Some(inner) = token.strip_prefix('{').and_then(|s| s.strip_suffix('}')) else {
+            continue;
+        };
+        if inner.starts_with('-') || inner.starts_with("...") {
+            continue;
+        }
+        let Some(colon) = inner.find(':') else {
+            continue;
+        };
+        let entry_name = &inner[..colon];
+        if entry_name.ends_with('-') {
+            continue;
+        }
+        let pos_part = &inner[colon + 1..];
+        let base_pos = pos_part
+            .split(':')
+            .next()
+            .unwrap_or(pos_part)
+            .split(',')
+            .next()
+            .unwrap_or(pos_part);
+        stems.push((entry_name.to_string(), base_pos.to_string()));
+    }
+    stems
+}
+
+/// Promote (move to front) the hypothesis whose first stem matches
+/// `(entry_name, base_pos)`. Ignores subtypes and homophones.
+fn promote_stem_match(wp: &mut WordParse, entry_name: &str, base_pos: &str) {
+    let Some(idx) = wp.hypotheses.iter().position(|h| {
+        h.components
+            .iter()
+            .find(|c| c.role == MorphemeRole::Stem)
+            .map_or(false, |stem| {
+                if stem.entry_name != entry_name {
+                    return false;
+                }
+                let hyp_base = stem
+                    .pos
+                    .split(':')
+                    .next()
+                    .unwrap_or(&stem.pos)
+                    .split(',')
+                    .next()
+                    .unwrap_or(&stem.pos);
+                hyp_base == base_pos
+            })
+    }) else {
+        return;
+    };
+    if idx > 0 {
+        let preferred = wp.hypotheses.remove(idx);
+        wp.hypotheses.insert(0, preferred);
     }
 }
 

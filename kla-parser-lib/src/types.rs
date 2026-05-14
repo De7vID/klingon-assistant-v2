@@ -86,6 +86,11 @@ pub struct DictEntry {
     /// True if this is a stative verb ("be X").
     #[serde(default)]
     pub stative: bool,
+    /// True if tagged as archaic or hypothetical in the dictionary —
+    /// extremely rare in real usage and should not compete with common
+    /// readings (e.g. {'ej:n:hyp} should never outrank {'ej:conj}).
+    #[serde(default)]
+    pub rare: bool,
     /// Components string from the dictionary (e.g., "{nuH:n:1}, {-mey:n}").
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub components: String,

@@ -23,6 +23,10 @@ const LETTER_PENALTY: f64 = -10.0;
 const PRONOUN_COPULA_BONUS: f64 = 5.0;
 // Slang whole-word entries are less likely than their decomposed counterparts.
 const SLANG_PENALTY: f64 = -5.0;
+// Archaic or hypothetical entries are vanishingly rare in real usage; penalise
+// heavily so they never compete with common readings (e.g. {'ej:conj} should
+// outrank {'ej:n:hyp} unambiguously).
+const RARE_PENALTY: f64 = -50.0;
 // Whole-word entries that are transparently noun + plural suffix (e.g., {nuHmey})
 // are convenience listings; prefer decomposition.
 const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
@@ -91,6 +95,28 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
         // Pronoun-as-copula bonus.
         if h.parse_type == ParseType::Pronoun {
             s += PRONOUN_COPULA_BONUS;
+        }
+
+        // Heavy penalty for archaic/hypothetical entries. Match by stem base
+        // POS and homophone so e.g. {'ej:n:hyp} is penalised but {'ej:conj}
+        // (a separate entry on the same stem) is not.
+        if let Some(stem) = stem {
+            let base_pos = stem
+                .pos
+                .split(':')
+                .next()
+                .unwrap_or(&stem.pos)
+                .split(',')
+                .next()
+                .unwrap_or(&stem.pos);
+            let homo = stem.homophone.unwrap_or(0);
+            let is_rare = dict.lookup(stem_name).map_or(false, |es| {
+                es.iter()
+                    .any(|e| e.rare && e.pos == base_pos && e.homophone == homo)
+            });
+            if is_rare {
+                s += RARE_PENALTY;
+            }
         }
     } else {
         s += STEM_NOT_IN_DICT;

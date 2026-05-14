@@ -24,6 +24,8 @@ struct DictEntryRaw {
     slang: bool,
     /// True if this is a stative verb ("be X").
     stative: bool,
+    /// True if tagged archaic or hypothetical (rare in real usage).
+    rare: bool,
     components: String,
 }
 
@@ -119,6 +121,7 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                                 letter: false,
                                 slang: false,
                                 stative: false,
+                                rare: false,
                                 components: components.clone(),
                             });
                         }
@@ -133,6 +136,9 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                     let stative = pos_raw
                         .split(|c: char| c == ',' || c == ':')
                         .any(|t| t == "is");
+                    let rare = pos_raw
+                        .split(|c: char| c == ',' || c == ':')
+                        .any(|t| t == "archaic" || t == "hyp");
                     entries.push(DictEntryRaw {
                         name: entry_name,
                         pos: base_pos,
@@ -142,6 +148,7 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                         letter,
                         slang,
                         stative,
+                        rare,
                         components,
                     });
                 }

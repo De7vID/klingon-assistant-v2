@@ -85,18 +85,12 @@ fn ghach_without_suffix_warns() {
     let d = dict();
     // {lobghach} = {lob} + {-ghach}, but no other verb suffix before {-ghach}.
     let result = parse_word("lobghach", &d);
-    let verb = result
-        .hypotheses
-        .iter()
-        .find(|h| {
-            h.parse_type == ParseType::Verb
-                && h.components.iter().any(|c| c.entry_name == "-ghach")
-        });
+    let verb = result.hypotheses.iter().find(|h| {
+        h.parse_type == ParseType::Verb && h.components.iter().any(|c| c.entry_name == "-ghach")
+    });
     if let Some(v) = verb {
         assert!(
-            v.warnings
-                .iter()
-                .any(|w| w.contains("-ghach")),
+            v.warnings.iter().any(|w| w.contains("-ghach")),
             "-ghach without preceding suffix should warn"
         );
     }
@@ -314,6 +308,34 @@ fn noun_after_possessive_stays_noun() {
     let parse = kla_parser_lib::parse_sentence("Hab SoSlI' Quch", &d);
     let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
     assert_eq!(bracketed, "{Hab:v}, {SoS:n}, {-lI':n}, {Quch:n}");
+}
+
+#[test]
+fn nxv_non_stative_middle_word_is_noun() {
+    // {qIrq qun vIqImchoH} - {qun} is non-stative; in N-X-V context the
+    // middle word can't be the clause's main verb, so it must be a noun
+    // (genitive). Expected: {qIrq:n:name}, {qun:n}, ...
+    let d = dict();
+    let parse = kla_parser_lib::parse_sentence("qIrq qun vIqImchoH", &d);
+    let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
+    assert!(
+        bracketed.contains("{qun:n}"),
+        "qun should be noun in N-X-V context, got: {bracketed}"
+    );
+}
+
+#[test]
+fn nxv_stative_middle_word_keeps_verb() {
+    // {DoS tIn yIbuS} = "Concentrate on the big target" - {tIn} is stative,
+    // so its adjectival use is grammatical. The N-X-V heuristic must leave
+    // ranking to confidence rather than forcing a noun reading.
+    let d = dict();
+    let parse = kla_parser_lib::parse_sentence("DoS tIn yIbuS", &d);
+    let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
+    assert!(
+        bracketed.contains("{tIn:v}"),
+        "stative tIn should remain verb-stemmed, got: {bracketed}"
+    );
 }
 
 // ---------------------------------------------------------------------------

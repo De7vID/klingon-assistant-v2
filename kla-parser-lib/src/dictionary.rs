@@ -16,8 +16,13 @@ pub struct Dictionary {
     /// annotated sentences (e.g., {'ej:conj} over the archaic {'ej:n:hyp}).
     pos_freq: HashMap<String, HashMap<String, u32>>,
     /// Map from sentence entry_name to its annotated components string.
-    /// Used to short-circuit parsing for sentences already in the dictionary.
+    /// Consulted by `prefer_canonical_components` to promote the hypothesis
+    /// for each surface word that matches the dictionary's annotation when
+    /// the input exactly matches a known sentence entry.
     canonical_components: HashMap<String, String>,
+    /// Subset of canonical_components for archaic sentences, whose components
+    /// don't follow modern grammar and must be emitted verbatim.
+    archaic_sentence_components: HashMap<String, String>,
 }
 
 impl Dictionary {
@@ -28,10 +33,7 @@ impl Dictionary {
 
         let mut entries: HashMap<String, Vec<DictEntry>> = HashMap::new();
         for entry in data.entries {
-            entries
-                .entry(entry.name.clone())
-                .or_default()
-                .push(entry);
+            entries.entry(entry.name.clone()).or_default().push(entry);
         }
 
         let homophone_freq = build_homophone_freq(&data.sentences);
@@ -42,6 +44,12 @@ impl Dictionary {
             .filter(|s| !s.components.is_empty())
             .map(|s| (s.entry_name.clone(), s.components.clone()))
             .collect();
+        let archaic_sentence_components = data
+            .sentences
+            .iter()
+            .filter(|s| s.archaic && !s.components.is_empty())
+            .map(|s| (s.entry_name.clone(), s.components.clone()))
+            .collect();
 
         Self {
             entries,
@@ -49,6 +57,7 @@ impl Dictionary {
             homophone_freq,
             pos_freq,
             canonical_components,
+            archaic_sentence_components,
         }
     }
 
@@ -99,6 +108,16 @@ impl Dictionary {
     /// exactly matches `input`, if such an entry exists.
     pub fn canonical_components(&self, input: &str) -> Option<&str> {
         self.canonical_components.get(input).map(|s| s.as_str())
+    }
+
+    /// Return the annotated components for an archaic sentence whose
+    /// `entry_name` exactly matches `input`. Archaic sentences ({wIj jup},
+    /// {ghIj qet jaghmeyjaj.}) have fixed historical components that can't
+    /// be derived by morphological parsing.
+    pub fn archaic_sentence_components(&self, input: &str) -> Option<&str> {
+        self.archaic_sentence_components
+            .get(input)
+            .map(|s| s.as_str())
     }
 }
 
@@ -156,7 +175,10 @@ fn extract_homophone(token: &str) -> Option<(String, u8)> {
     // digit. Handles formats like "v:2", "n:1,num", "n:1h".
     let last_colon = pos_part.rsplit(':').next()?;
     let first_seg = last_colon.split(',').next()?;
-    let digits: String = first_seg.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = first_seg
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     if digits.is_empty() {
         return None;
     }
@@ -181,12 +203,7 @@ fn extract_base_pos(token: &str) -> Option<(String, String)> {
     }
     let pos_part = &inner[colon + 1..];
     // The base POS is the first colon-/comma-separated segment.
-    let base = pos_part
-        .split(':')
-        .next()?
-        .split(',')
-        .next()?
-        .to_string();
+    let base = pos_part.split(':').next()?.split(',').next()?.to_string();
     if base == "sen" {
         return None;
     }

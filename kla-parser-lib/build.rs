@@ -24,6 +24,8 @@ struct DictEntryRaw {
     slang: bool,
     /// True if this is a stative verb ("be X").
     stative: bool,
+    /// True if tagged archaic or hypothetical (rare in real usage).
+    rare: bool,
     components: String,
 }
 
@@ -31,6 +33,7 @@ struct DictEntryRaw {
 struct SentenceRaw {
     entry_name: String,
     components: String,
+    archaic: bool,
 }
 
 fn main() {
@@ -88,23 +91,35 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                 }
 
                 if pos_raw.starts_with("sen:") {
-                    // Sentence entry. Skip templates — they have placeholders
+                    // Sentence entry. Skip templates - they have placeholders
                     // that cannot be parsed without being filled in.
-                    if !pos_raw.contains("tmpl") && !pos_raw.contains("archaic") {
+                    if !pos_raw.contains("tmpl") {
+                        let archaic = pos_raw
+                            .split(|c: char| c == ',' || c == ':')
+                            .any(|t| t == "archaic");
                         if !components.is_empty() {
                             sentences.push(SentenceRaw {
                                 entry_name: entry_name.clone(),
                                 components: components.clone(),
+                                archaic,
                             });
                         }
-                        // Multi-word sentence entries are also exposed as
-                        // whole-word lookups so the compound matcher in
-                        // parse_sentence can find them when they appear inside
-                        // a larger sentence (e.g. {tlhIngan maH!:sen}).
-                        // Single-word sentences are left out — they should
-                        // decompose morphologically rather than match as a
-                        // single sen wholeword.
-                        if entry_name.contains(' ') {
+                        // Sentence entries are exposed as whole-word lookups
+                        // so the compound matcher in parse_sentence (and the
+                        // punctuation-retry in parse_word) can find them when
+                        // they appear inside a larger sentence (e.g.
+                        // {tlhIngan maH!:sen}, {jISaHbe'.:sen}). Single-word
+                        // sentences without terminal punctuation are left
+                        // out - they would shadow morphological decomposition
+                        // for ordinary inflected verbs (e.g. {bIyaj}). Archaic
+                        // sentences are also left out - they have a dedicated
+                        // bypass in parse_sentence that emits the stored
+                        // components verbatim.
+                        let has_terminal_punct = entry_name
+                            .chars()
+                            .last()
+                            .map_or(false, |c| matches!(c, '.' | '!' | '?' | ',' | ';'));
+                        if !archaic && (entry_name.contains(' ') || has_terminal_punct) {
                             entries.push(DictEntryRaw {
                                 name: entry_name.clone(),
                                 pos: "sen".to_string(),
@@ -114,6 +129,7 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                                 letter: false,
                                 slang: false,
                                 stative: false,
+                                rare: false,
                                 components: components.clone(),
                             });
                         }
@@ -128,6 +144,9 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                     let stative = pos_raw
                         .split(|c: char| c == ',' || c == ':')
                         .any(|t| t == "is");
+                    let rare = pos_raw
+                        .split(|c: char| c == ',' || c == ':')
+                        .any(|t| t == "archaic" || t == "hyp");
                     entries.push(DictEntryRaw {
                         name: entry_name,
                         pos: base_pos,
@@ -137,6 +156,7 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                         letter,
                         slang,
                         stative,
+                        rare,
                         components,
                     });
                 }
@@ -170,8 +190,7 @@ fn read_table_columns(reader: &mut Reader<&[u8]>) -> HashMap<String, String> {
             }
             Ok(Event::Text(ref e)) => {
                 if current_col_name.is_some() {
-                    current_text
-                        .push_str(&e.unescape().unwrap_or_default());
+                    current_text.push_str(&e.unescape().unwrap_or_default());
                 }
             }
             Ok(Event::End(ref e)) => {
@@ -200,12 +219,11 @@ fn is_affix(pos: &str) -> bool {
     pos.contains("suff") || pos.contains("pref")
 }
 
-// Tags that are internal metadata — stripped from canonical output.
+// Tags that are internal metadata - stripped from canonical output.
 const INTERNAL_TAGS: &[&str] = &[
-    "alt", "klcp1", "t_c", "i_c", "is", "t", "i", "ambi", "anim", "being", "body", "deiv",
-    "deri", "deriv", "epithet", "extcan", "fic", "food", "idiom", "nodict", "noanki", "person",
-    "place", "plural", "reg", "terran", "weap", "inhpl", "inhps", "slang", "archaic", "hyp",
-    "nolink",
+    "alt", "klcp1", "t_c", "i_c", "is", "t", "i", "ambi", "anim", "being", "body", "deiv", "deri",
+    "deriv", "epithet", "extcan", "fic", "food", "idiom", "nodict", "noanki", "person", "place",
+    "plural", "reg", "terran", "weap", "inhpl", "inhps", "slang", "archaic", "hyp", "nolink",
 ];
 
 /// Extract base POS, canonical POS (for output), and homophone index.
@@ -216,8 +234,13 @@ const INTERNAL_TAGS: &[&str] = &[
 fn parse_pos(pos: &str) -> (String, String, u8) {
     // Split on colon to get the colon-separated parts.
     let colon_parts: Vec<&str> = pos.split(':').collect();
-    let base = colon_parts.first().copied().unwrap_or(pos)
-        .split(',').next().unwrap_or(pos);
+    let base = colon_parts
+        .first()
+        .copied()
+        .unwrap_or(pos)
+        .split(',')
+        .next()
+        .unwrap_or(pos);
 
     let mut homophone: u8 = 0;
 
@@ -258,7 +281,7 @@ fn parse_pos(pos: &str) -> (String, String, u8) {
         }
     }
 
-    // When a homophone number is present, "pro" and "name" are redundant — drop
+    // When a homophone number is present, "pro" and "name" are redundant - drop
     // them. Keep "num" so sentence-level rules can identify numbers.
     if homophone > 0 {
         for part in &mut canonical_colon_parts {
@@ -299,16 +322,10 @@ mod tests {
     fn test_parse_pos_with_semantic_tags() {
         // Tags like pro, name, num are preserved when no homophone.
         assert_eq!(parse_pos("n:pro"), ("n".into(), "n:pro".into(), 0));
-        assert_eq!(
-            parse_pos("n:name,klcp1"),
-            ("n".into(), "n:name".into(), 0)
-        );
+        assert_eq!(parse_pos("n:name,klcp1"), ("n".into(), "n:name".into(), 0));
         assert_eq!(parse_pos("n:num"), ("n".into(), "n:num".into(), 0));
         // pro is dropped when homophone is present.
-        assert_eq!(
-            parse_pos("n:1,pro,klcp1"),
-            ("n".into(), "n:1".into(), 1)
-        );
+        assert_eq!(parse_pos("n:1,pro,klcp1"), ("n".into(), "n:1".into(), 1));
     }
 
     #[test]
@@ -320,10 +337,7 @@ mod tests {
     #[test]
     fn test_parse_pos_homophone_with_tag() {
         // Rare case: homophone + semantic tag preserved.
-        assert_eq!(
-            parse_pos("n:2,name"),
-            ("n".into(), "n:2,name".into(), 2)
-        );
+        assert_eq!(parse_pos("n:2,name"), ("n".into(), "n:2,name".into(), 2));
     }
 
     #[test]

@@ -23,6 +23,10 @@ const LETTER_PENALTY: f64 = -10.0;
 const PRONOUN_COPULA_BONUS: f64 = 5.0;
 // Slang whole-word entries are less likely than their decomposed counterparts.
 const SLANG_PENALTY: f64 = -5.0;
+// Archaic or hypothetical entries are vanishingly rare in real usage; penalise
+// heavily so they never compete with common readings (e.g. {'ej:conj} should
+// outrank {'ej:n:hyp} unambiguously).
+const RARE_PENALTY: f64 = -50.0;
 // Whole-word entries that are transparently noun + plural suffix (e.g., {nuHmey})
 // are convenience listings; prefer decomposition.
 const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
@@ -30,6 +34,12 @@ const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
 const STATIVE_TRANSITIVE_PREFIX: f64 = -30.0;
 // Stative verb with an imperative prefix - grammatically valid but rare.
 const STATIVE_IMPERATIVE_PREFIX: f64 = -3.0;
+// Stative verb with a Type 2 (predisposition/volition) suffix - semantically
+// incoherent: "ready to be green" etc. The suffix presupposes an action, so
+// prefer a non-stative homophone of the stem when one exists.
+const STATIVE_VOLITIONAL_SUFFIX: f64 = -30.0;
+// Type 2 verb suffixes (TKD §4.2.2: predisposition / volition / readiness).
+const VOLITIONAL_SUFFIXES: &[&str] = &["-nIS", "-qang", "-rup", "-beH", "-vIp"];
 // Corpus frequency bonus per annotated occurrence of a homophone. Small enough
 // not to override grammar-based scoring, large enough to break ties.
 const CORPUS_FREQ_PER_OCCURRENCE: f64 = 0.1;
@@ -91,6 +101,28 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
         // Pronoun-as-copula bonus.
         if h.parse_type == ParseType::Pronoun {
             s += PRONOUN_COPULA_BONUS;
+        }
+
+        // Heavy penalty for archaic/hypothetical entries. Match by stem base
+        // POS and homophone so e.g. {'ej:n:hyp} is penalised but {'ej:conj}
+        // (a separate entry on the same stem) is not.
+        if let Some(stem) = stem {
+            let base_pos = stem
+                .pos
+                .split(':')
+                .next()
+                .unwrap_or(&stem.pos)
+                .split(',')
+                .next()
+                .unwrap_or(&stem.pos);
+            let homo = stem.homophone.unwrap_or(0);
+            let is_rare = dict.lookup(stem_name).map_or(false, |es| {
+                es.iter()
+                    .any(|e| e.rare && e.pos == base_pos && e.homophone == homo)
+            });
+            if is_rare {
+                s += RARE_PENALTY;
+            }
         }
     } else {
         s += STEM_NOT_IN_DICT;
@@ -164,23 +196,27 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
     let affix_count = h
         .components
         .iter()
-        .filter(|c| matches!(c.role, MorphemeRole::Prefix | MorphemeRole::Suffix | MorphemeRole::Rover))
+        .filter(|c| {
+            matches!(
+                c.role,
+                MorphemeRole::Prefix | MorphemeRole::Suffix | MorphemeRole::Rover
+            )
+        })
         .count();
     s += affix_count as f64 * AFFIX_PENALTY;
 
     // Prefix-transitivity check: stative verbs cannot take a direct object.
+    // Volitional-suffix check: Type 2 suffixes (need/ready/willing/afraid)
+    // presuppose an action and don't combine with stative readings.
     if h.parse_type == ParseType::Verb {
-        let prefix = h
-            .components
-            .iter()
-            .find(|c| c.role == MorphemeRole::Prefix);
-        if let Some(pfx) = prefix {
-            let pfx_text = pfx.text.as_str();
-            let homo = stem.map(|s| s.homophone.unwrap_or(0)).unwrap_or(0);
-            let is_stative = dict.lookup(stem_name).map_or(false, |es| {
-                es.iter().any(|e| e.homophone == homo && e.stative)
-            });
-            if is_stative {
+        let prefix = h.components.iter().find(|c| c.role == MorphemeRole::Prefix);
+        let homo = stem.map(|s| s.homophone.unwrap_or(0)).unwrap_or(0);
+        let is_stative = dict.lookup(stem_name).map_or(false, |es| {
+            es.iter().any(|e| e.homophone == homo && e.stative)
+        });
+        if is_stative {
+            if let Some(pfx) = prefix {
+                let pfx_text = pfx.text.as_str();
                 if NO_OBJECT_PREFIXES.contains(&pfx_text) {
                     // Intransitive prefix + stative: compatible, no penalty.
                 } else if IMPERATIVE_PREFIXES.contains(&pfx_text) {
@@ -189,6 +225,13 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
                     // All other non-null prefixes always indicate a direct object.
                     s += STATIVE_TRANSITIVE_PREFIX;
                 }
+            }
+            let has_volitional = h.components.iter().any(|c| {
+                c.role == MorphemeRole::Suffix
+                    && VOLITIONAL_SUFFIXES.contains(&c.entry_name.as_str())
+            });
+            if has_volitional {
+                s += STATIVE_VOLITIONAL_SUFFIX;
             }
         }
     }
@@ -212,8 +255,7 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
             .next()
             .unwrap_or(&stem.pos);
         let pos_freq = dict.pos_frequency(&stem.entry_name, base_pos);
-        s += pos_freq.saturating_sub(POS_FREQ_BASELINE).min(10) as f64
-            * POS_FREQ_PER_OCCURRENCE;
+        s += pos_freq.saturating_sub(POS_FREQ_BASELINE).min(10) as f64 * POS_FREQ_PER_OCCURRENCE;
     }
 
     // Warning-based penalties.
@@ -264,16 +306,8 @@ pub fn compare(a: &Hypothesis, b: &Hypothesis) -> Ordering {
         })
         .then_with(|| {
             // Alphabetical by first component POS.
-            let a_pos = a
-                .components
-                .first()
-                .map(|c| c.pos.as_str())
-                .unwrap_or("");
-            let b_pos = b
-                .components
-                .first()
-                .map(|c| c.pos.as_str())
-                .unwrap_or("");
+            let a_pos = a.components.first().map(|c| c.pos.as_str()).unwrap_or("");
+            let b_pos = b.components.first().map(|c| c.pos.as_str()).unwrap_or("");
             a_pos.cmp(b_pos)
         })
 }

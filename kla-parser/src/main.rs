@@ -61,10 +61,7 @@ fn process_line(line: &str, dict: &Dictionary, cli: &Cli) {
     if cli.bracketed {
         if is_sentence {
             let parse = parse_sentence(line, dict);
-            println!(
-                "{}",
-                kla_parser_lib::output::sentence_to_bracketed(&parse)
-            );
+            println!("{}", kla_parser_lib::output::sentence_to_bracketed(&parse));
         } else {
             let word = strip_trailing_punct(line.trim());
             let wp = parse_word(word, dict);

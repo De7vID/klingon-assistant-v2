@@ -728,9 +728,18 @@ mod tests {
     }
 
     #[test]
-    fn test_split_multiple_punctuation() {
+    fn test_split_trailing_exclamation() {
         let (words, punct) = split_sentence("tlhIngan maH!");
         assert_eq!(words, vec!["tlhIngan", "maH"]);
         assert_eq!(punct, vec![None, Some('!')]);
+    }
+
+    #[test]
+    fn test_split_strips_consecutive_trailing_punct() {
+        // Multiple trailing punctuation chars: the word is stripped of all
+        // of them, but only the last char is recorded as the trailing punct.
+        let (words, punct) = split_sentence("Qapla'?!");
+        assert_eq!(words, vec!["Qapla'"]);
+        assert_eq!(punct, vec![Some('!')]);
     }
 }

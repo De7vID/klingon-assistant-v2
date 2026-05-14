@@ -458,6 +458,11 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
         let candidate = format!("{prefix_str} {}", stem.text);
         if let Some(entries) = dict.lookup(&candidate) {
             let entry = &entries[0];
+            let sub_components = if !entry.components.is_empty() {
+                morphology::parse_components_str(&entry.components)
+            } else {
+                vec![]
+            };
             let mut components = vec![Component {
                 text: candidate.clone(),
                 entry_name: candidate,
@@ -468,7 +473,7 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
                     None
                 },
                 role: MorphemeRole::Stem,
-                sub_components: vec![],
+                sub_components,
             }];
             components.extend(suffixes);
 

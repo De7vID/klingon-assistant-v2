@@ -34,6 +34,12 @@ const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
 const STATIVE_TRANSITIVE_PREFIX: f64 = -30.0;
 // Stative verb with an imperative prefix - grammatically valid but rare.
 const STATIVE_IMPERATIVE_PREFIX: f64 = -3.0;
+// Stative verb with a Type 2 (predisposition/volition) suffix — semantically
+// incoherent: "ready to be green" etc. The suffix presupposes an action, so
+// prefer a non-stative homophone of the stem when one exists.
+const STATIVE_VOLITIONAL_SUFFIX: f64 = -30.0;
+// Type 2 verb suffixes (TKD §4.2.2: predisposition / volition / readiness).
+const VOLITIONAL_SUFFIXES: &[&str] = &["-nIS", "-qang", "-rup", "-beH", "-vIp"];
 // Corpus frequency bonus per annotated occurrence of a homophone. Small enough
 // not to override grammar-based scoring, large enough to break ties.
 const CORPUS_FREQ_PER_OCCURRENCE: f64 = 0.1;
@@ -195,18 +201,20 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
     s += affix_count as f64 * AFFIX_PENALTY;
 
     // Prefix-transitivity check: stative verbs cannot take a direct object.
+    // Volitional-suffix check: Type 2 suffixes (need/ready/willing/afraid)
+    // presuppose an action and don't combine with stative readings.
     if h.parse_type == ParseType::Verb {
         let prefix = h
             .components
             .iter()
             .find(|c| c.role == MorphemeRole::Prefix);
-        if let Some(pfx) = prefix {
-            let pfx_text = pfx.text.as_str();
-            let homo = stem.map(|s| s.homophone.unwrap_or(0)).unwrap_or(0);
-            let is_stative = dict.lookup(stem_name).map_or(false, |es| {
-                es.iter().any(|e| e.homophone == homo && e.stative)
-            });
-            if is_stative {
+        let homo = stem.map(|s| s.homophone.unwrap_or(0)).unwrap_or(0);
+        let is_stative = dict.lookup(stem_name).map_or(false, |es| {
+            es.iter().any(|e| e.homophone == homo && e.stative)
+        });
+        if is_stative {
+            if let Some(pfx) = prefix {
+                let pfx_text = pfx.text.as_str();
                 if NO_OBJECT_PREFIXES.contains(&pfx_text) {
                     // Intransitive prefix + stative: compatible, no penalty.
                 } else if IMPERATIVE_PREFIXES.contains(&pfx_text) {
@@ -215,6 +223,13 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
                     // All other non-null prefixes always indicate a direct object.
                     s += STATIVE_TRANSITIVE_PREFIX;
                 }
+            }
+            let has_volitional = h.components.iter().any(|c| {
+                c.role == MorphemeRole::Suffix
+                    && VOLITIONAL_SUFFIXES.contains(&c.entry_name.as_str())
+            });
+            if has_volitional {
+                s += STATIVE_VOLITIONAL_SUFFIX;
             }
         }
     }

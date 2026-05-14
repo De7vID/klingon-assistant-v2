@@ -26,9 +26,9 @@ const SLANG_PENALTY: f64 = -5.0;
 // Whole-word entries that are transparently noun + plural suffix (e.g., {nuHmey})
 // are convenience listings; prefer decomposition.
 const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
-// Stative verb with a prefix that requires a direct object — grammatically impossible.
+// Stative verb with a prefix that requires a direct object - grammatically impossible.
 const STATIVE_TRANSITIVE_PREFIX: f64 = -30.0;
-// Stative verb with an imperative prefix — grammatically valid but rare.
+// Stative verb with an imperative prefix - grammatically valid but rare.
 const STATIVE_IMPERATIVE_PREFIX: f64 = -3.0;
 // Corpus frequency bonus per annotated occurrence of a homophone. Small enough
 // not to override grammar-based scoring, large enough to break ties.
@@ -40,10 +40,13 @@ const POS_FREQ_PER_OCCURRENCE: f64 = 0.1;
 // Bonus for whole-word entries whose name is a multi-word compound. The
 // dictionary has explicitly registered the compound as a unit, so prefer it
 // over a split into corpus-frequent constituents (e.g., {may' ta:n} over
-// {may':n}, {ta:n}). Sized to outweigh the maximum constituent POS bonus.
+// {may':n}, {ta:n}). The split form's primary stem can pick up at most
+// `POS_FREQ_PER_OCCURRENCE * 10 = 1.0` from the POS-frequency bonus; this
+// constant is set to twice that cap so the compound wins even when the
+// constituents happen to be corpus-frequent.
 const COMPOUND_WHOLE_WORD_BONUS: f64 = 2.0;
 // Counts at or below this threshold contribute no POS bonus. Suppresses weak
-// signals — e.g. `wej:n=2` vs `wej:adv=1` should not bias toward `n`, but
+// signals - e.g. `wej:n=2` vs `wej:adv=1` should not bias toward `n`, but
 // `'ej:conj=9` vs `'ej:n=0` still produces a clear preference.
 const POS_FREQ_BASELINE: u32 = 2;
 // Type-2 noun suffixes (plurals) that mark a whole-word entry as transparent.

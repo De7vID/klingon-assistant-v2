@@ -6,7 +6,7 @@ ranked multiple hypotheses with confidence scores.
 
 The dictionary (~3,000 stems) is compiled from the
 [klingon-assistant-data](https://github.com/De7vID/klingon-assistant-data)
-XML database and embedded at build time — no external files are needed
+XML database and embedded at build time - no external files are needed
 at runtime.
 
 ## Building
@@ -79,11 +79,11 @@ Stdin mode processes one sentence per line (NDJSON output).
 
 For each word, three families of hypotheses are generated:
 
-1. **Whole-word** — direct dictionary lookup.
-2. **Verb** — try each of the 29 verb prefixes, then enumerate all valid
+1. **Whole-word** - direct dictionary lookup.
+2. **Verb** - try each of the 29 verb prefixes, then enumerate all valid
    suffix chains (types 1-9, rovers, and the type-R slots) using an
    iterative work queue.
-3. **Noun** — enumerate noun suffix chains (types 1-5) without prefixes.
+3. **Noun** - enumerate noun suffix chains (types 1-5) without prefixes.
 
 All valid decompositions are kept, scored by confidence (dictionary
 match, POS agreement, parsimony), and returned ranked. Multi-word

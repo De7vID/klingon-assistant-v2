@@ -33,10 +33,7 @@ impl Dictionary {
 
         let mut entries: HashMap<String, Vec<DictEntry>> = HashMap::new();
         for entry in data.entries {
-            entries
-                .entry(entry.name.clone())
-                .or_default()
-                .push(entry);
+            entries.entry(entry.name.clone()).or_default().push(entry);
         }
 
         let homophone_freq = build_homophone_freq(&data.sentences);
@@ -178,7 +175,10 @@ fn extract_homophone(token: &str) -> Option<(String, u8)> {
     // digit. Handles formats like "v:2", "n:1,num", "n:1h".
     let last_colon = pos_part.rsplit(':').next()?;
     let first_seg = last_colon.split(',').next()?;
-    let digits: String = first_seg.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = first_seg
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     if digits.is_empty() {
         return None;
     }
@@ -203,12 +203,7 @@ fn extract_base_pos(token: &str) -> Option<(String, String)> {
     }
     let pos_part = &inner[colon + 1..];
     // The base POS is the first colon-/comma-separated segment.
-    let base = pos_part
-        .split(':')
-        .next()?
-        .split(',')
-        .next()?
-        .to_string();
+    let base = pos_part.split(':').next()?.split(',').next()?.to_string();
     if base == "sen" {
         return None;
     }

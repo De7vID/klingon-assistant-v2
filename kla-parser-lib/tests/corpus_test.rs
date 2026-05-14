@@ -26,10 +26,10 @@ fn is_training(name: &str) -> bool {
 
 /// Strip redundant POS sub-tags that the database uses inconsistently.
 /// These tags are correct when present but their absence is not an error:
-///   :pro  — distinguishes pronouns, but redundant with homophone number
-///   :num  — distinguishes numbers, same
-///   :suff — redundant because suffixes always begin with -
-///   :pref — redundant because prefixes always end with -
+///   :pro  - distinguishes pronouns, but redundant with homophone number
+///   :num  - distinguishes numbers, same
+///   :suff - redundant because suffixes always begin with -
+///   :pref - redundant because prefixes always end with -
 fn normalize_tags(canonical: &str) -> String {
     const STRIP_TAGS: &[&str] = &["pro", "num", "name", "suff", "pref"];
 
@@ -90,7 +90,10 @@ fn parse_components(bracketed: &str) -> Vec<String> {
 /// Expand sentence references in expected components. A component like
 /// `{tlhIngan maH!:sen}` is replaced by looking up the sentence entry
 /// "tlhIngan maH!" and substituting its own components.
-fn expand_sentence_refs(components: &[String], sentence_map: &HashMap<String, String>) -> Vec<String> {
+fn expand_sentence_refs(
+    components: &[String],
+    sentence_map: &HashMap<String, String>,
+) -> Vec<String> {
     let mut result = Vec::new();
     for comp in components {
         if let Some(expanded) = try_expand_sen_ref(comp, sentence_map) {
@@ -129,7 +132,7 @@ fn component_eq(expected: &str, got: &str) -> bool {
     if expected == got {
         return true;
     }
-    // Check for :0} or :0, in expected — strip the homophone from both sides.
+    // Check for :0} or :0, in expected - strip the homophone from both sides.
     if expected.contains(":0}") || expected.contains(":0,") {
         let e = expected.replace(":0}", "}").replace(":0,", ",");
         let g = strip_trailing_homophone(got);
@@ -141,7 +144,7 @@ fn component_eq(expected: &str, got: &str) -> bool {
 /// Strip a trailing homophone number from a component token.
 /// e.g., "{nuH:n:1}" → "{nuH:n}", "{nuH:n}" → "{nuH:n}".
 fn strip_trailing_homophone(comp: &str) -> String {
-    // Components look like {word:pos:N} — remove the :N before }.
+    // Components look like {word:pos:N} - remove the :N before }.
     if let Some(brace) = comp.rfind('}') {
         let inner = &comp[..brace];
         if let Some(colon) = inner.rfind(':') {
@@ -157,16 +160,16 @@ fn strip_trailing_homophone(comp: &str) -> String {
 /// Compare two component slices with homophone-0 wildcard matching.
 fn components_slice_eq(expected: &[String], got: &[String]) -> bool {
     expected.len() == got.len()
-        && expected.iter().zip(got.iter()).all(|(e, g)| component_eq(e, g))
+        && expected
+            .iter()
+            .zip(got.iter())
+            .all(|(e, g)| component_eq(e, g))
 }
 
 /// Check if the expected components can be produced by picking one hypothesis
 /// per word from the parse result. Each hypothesis contributes one or more
 /// components; the concatenation of all chosen hypotheses must match exactly.
-fn any_hypothesis_matches(
-    words: &[kla_parser_lib::types::WordParse],
-    expected: &[String],
-) -> bool {
+fn any_hypothesis_matches(words: &[kla_parser_lib::types::WordParse], expected: &[String]) -> bool {
     match_recursive(words, expected, 0, 0)
 }
 
@@ -307,7 +310,7 @@ fn corpus_training() {
 
     // Ensure the training corpus is non-empty so this test can detect regressions.
     assert!(total > 0, "no training corpus sentences found");
-    // We don't assert 100% right away — this lets us see the accuracy rate.
+    // We don't assert 100% right away - this lets us see the accuracy rate.
     // Uncomment the assert once accuracy is acceptable:
     // assert!(any_pct >= 80.0, "accuracy {any_pct:.1}% below 80%");
 }

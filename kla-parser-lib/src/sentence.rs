@@ -335,8 +335,7 @@ const PRONOUNS: &[&str] = &["jIH", "SoH", "ghaH", "'oH", "maH", "tlhIH", "chaH",
 /// is a complete possessive NP; a following bare word is more likely another
 /// noun in a genitive pattern than a verb.
 const POSSESSIVE_SUFFIXES: &[&str] = &[
-    "-wIj", "-lIj", "-Daj", "-chaj", "-maj", "-raj",
-    "-wI'", "-lI'", "-ma'", "-ra'",
+    "-wIj", "-lIj", "-Daj", "-chaj", "-maj", "-raj", "-wI'", "-lI'", "-ma'", "-ra'",
 ];
 
 /// Prefer verb readings for ambiguous bare words that follow a noun phrase.
@@ -367,10 +366,9 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
         // Skip if the preceding noun ends with a possessive suffix - the NP
         // is complete and the next word is likely a noun (genitive pattern,
         // e.g., {SoSlI' Quch} = "your mother's forehead").
-        let prev_ends_possessive = prev_top
-            .components
-            .last()
-            .map_or(false, |c| POSSESSIVE_SUFFIXES.contains(&c.entry_name.as_str()));
+        let prev_ends_possessive = prev_top.components.last().map_or(false, |c| {
+            POSSESSIVE_SUFFIXES.contains(&c.entry_name.as_str())
+        });
         if prev_ends_possessive {
             continue;
         }
@@ -396,16 +394,13 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
             // hypotheses count as "the next word is a verb". Adjectival
             // hypotheses also start with a verb stem POS but are noun-headed
             // in context, so they should not trigger the N-X-V noun-promotion.
-            let next_is_verb = parses[i + 1]
-                .hypotheses
-                .first()
-                .map_or(false, |h| {
-                    h.parse_type == ParseType::Verb
-                        || (h.parse_type == ParseType::WholeWord
-                            && h.components
-                                .first()
-                                .map_or(false, |c| c.pos.starts_with("v")))
-                });
+            let next_is_verb = parses[i + 1].hypotheses.first().map_or(false, |h| {
+                h.parse_type == ParseType::Verb
+                    || (h.parse_type == ParseType::WholeWord
+                        && h.components
+                            .first()
+                            .map_or(false, |c| c.pos.starts_with("v")))
+            });
             if next_is_verb {
                 if has_stative_verb_reading(&parses[i], dict) {
                     prefer_stative_verb(&mut parses[i], dict);
@@ -420,15 +415,21 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
         // and the noun reading is not a number (numbers should not become verbs).
         let has_noun_ww = parses[i].hypotheses.iter().any(|h| {
             h.parse_type == ParseType::WholeWord
-                && h.components.first().map_or(false, |c| c.pos.starts_with("n"))
+                && h.components
+                    .first()
+                    .map_or(false, |c| c.pos.starts_with("n"))
         });
         let noun_is_number = parses[i].hypotheses.iter().any(|h| {
             h.parse_type == ParseType::WholeWord
-                && h.components.first().map_or(false, |c| c.pos.contains("num"))
+                && h.components
+                    .first()
+                    .map_or(false, |c| c.pos.contains("num"))
         });
         let has_verb_ww = parses[i].hypotheses.iter().any(|h| {
             h.parse_type == ParseType::WholeWord
-                && h.components.first().map_or(false, |c| c.pos.starts_with("v"))
+                && h.components
+                    .first()
+                    .map_or(false, |c| c.pos.starts_with("v"))
         });
 
         if has_noun_ww && has_verb_ww && !noun_is_number {
@@ -451,9 +452,7 @@ fn has_stative_verb_reading(wp: &WordParse, dict: &Dictionary) -> bool {
         };
         let homo = stem.homophone.unwrap_or(0);
         dict.lookup(&stem.entry_name).map_or(false, |entries| {
-            entries
-                .iter()
-                .any(|e| e.stative && e.homophone == homo)
+            entries.iter().any(|e| e.stative && e.homophone == homo)
         })
     })
 }
@@ -488,9 +487,7 @@ fn prefer_stative_verb(wp: &mut WordParse, dict: &Dictionary) {
         };
         let homo = stem.homophone.unwrap_or(0);
         dict.lookup(&stem.entry_name).map_or(false, |entries| {
-            entries
-                .iter()
-                .any(|e| e.stative && e.homophone == homo)
+            entries.iter().any(|e| e.stative && e.homophone == homo)
         })
     }) {
         if pos > 0 {
@@ -502,12 +499,13 @@ fn prefer_stative_verb(wp: &mut WordParse, dict: &Dictionary) {
 
 /// Promote the highest-scoring verb hypothesis to the top.
 fn prefer_verb(wp: &mut WordParse) {
-    if let Some(pos) = wp
-        .hypotheses
-        .iter()
-        .position(|h| h.parse_type == ParseType::Verb || (h.parse_type == ParseType::WholeWord
-            && h.components.first().map_or(false, |c| c.pos.starts_with("v"))))
-    {
+    if let Some(pos) = wp.hypotheses.iter().position(|h| {
+        h.parse_type == ParseType::Verb
+            || (h.parse_type == ParseType::WholeWord
+                && h.components
+                    .first()
+                    .map_or(false, |c| c.pos.starts_with("v")))
+    }) {
         if pos > 0 {
             let verb = wp.hypotheses.remove(pos);
             wp.hypotheses.insert(0, verb);
@@ -535,14 +533,11 @@ fn prefer_num_reading(wp: &mut WordParse) {
 /// e.g., {wa'maH wej} = "thirteen" - {wej} is noun "three", not adverb "not yet".
 fn prefer_noun_after_number(parses: &mut [WordParse]) {
     for i in 1..parses.len() {
-        let prev_is_number = parses[i - 1]
-            .hypotheses
-            .first()
-            .map_or(false, |h| {
-                h.components
-                    .first()
-                    .map_or(false, |c| c.pos.contains("num"))
-            });
+        let prev_is_number = parses[i - 1].hypotheses.first().map_or(false, |h| {
+            h.components
+                .first()
+                .map_or(false, |c| c.pos.contains("num"))
+        });
         if !prev_is_number {
             continue;
         }
@@ -572,14 +567,11 @@ fn prefer_conj_je(parses: &mut [WordParse]) {
         }
         let is_last = i == parses.len() - 1;
         let next_is_verb = !is_last
-            && parses[i + 1]
-                .hypotheses
-                .first()
-                .map_or(false, |h| {
-                    h.components
-                        .first()
-                        .map_or(false, |c| c.pos.starts_with("v"))
-                });
+            && parses[i + 1].hypotheses.first().map_or(false, |h| {
+                h.components
+                    .first()
+                    .map_or(false, |c| c.pos.starts_with("v"))
+            });
         if is_last || next_is_verb {
             promote_pos(&mut parses[i], "conj");
         }
@@ -596,22 +588,16 @@ fn prefer_conj_pagh(parses: &mut [WordParse]) {
         if i + 1 >= parses.len() {
             continue;
         }
-        let prev_is_verb = parses[i - 1]
-            .hypotheses
-            .first()
-            .map_or(false, |h| {
-                h.components
-                    .first()
-                    .map_or(false, |c| c.pos.starts_with("v"))
-            });
-        let next_is_verb = parses[i + 1]
-            .hypotheses
-            .first()
-            .map_or(false, |h| {
-                h.components
-                    .first()
-                    .map_or(false, |c| c.pos.starts_with("v"))
-            });
+        let prev_is_verb = parses[i - 1].hypotheses.first().map_or(false, |h| {
+            h.components
+                .first()
+                .map_or(false, |c| c.pos.starts_with("v"))
+        });
+        let next_is_verb = parses[i + 1].hypotheses.first().map_or(false, |h| {
+            h.components
+                .first()
+                .map_or(false, |c| c.pos.starts_with("v"))
+        });
         if prev_is_verb && next_is_verb {
             promote_pos(&mut parses[i], "conj");
         }
@@ -622,9 +608,7 @@ fn prefer_conj_pagh(parses: &mut [WordParse]) {
 fn promote_pos(wp: &mut WordParse, target: &str) {
     if let Some(pos) = wp.hypotheses.iter().position(|h| {
         h.parse_type == ParseType::WholeWord
-            && h.components
-                .first()
-                .map_or(false, |c| c.pos == target)
+            && h.components.first().map_or(false, |c| c.pos == target)
     }) {
         if pos > 0 {
             let preferred = wp.hypotheses.remove(pos);
@@ -678,14 +662,8 @@ fn add_split_hypotheses(wp: &mut WordParse, window: &[String], dict: &Dictionary
     }
 
     for combo in combos {
-        let components: Vec<Component> = combo
-            .iter()
-            .flat_map(|h| h.components.clone())
-            .collect();
-        let warnings: Vec<String> = combo
-            .iter()
-            .flat_map(|h| h.warnings.clone())
-            .collect();
+        let components: Vec<Component> = combo.iter().flat_map(|h| h.components.clone()).collect();
+        let warnings: Vec<String> = combo.iter().flat_map(|h| h.warnings.clone()).collect();
         // Derive parse_type from the first underlying hypothesis; fall back to Noun.
         let parse_type = combo
             .first()
@@ -718,7 +696,10 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
     let last_parse = morphology::parse_word(last_word, dict);
 
     for hyp in &last_parse.hypotheses {
-        let stem = hyp.components.iter().find(|c| c.role == MorphemeRole::Stem)?;
+        let stem = hyp
+            .components
+            .iter()
+            .find(|c| c.role == MorphemeRole::Stem)?;
         let suffixes: Vec<_> = hyp
             .components
             .iter()

@@ -34,7 +34,7 @@ const TRANSPARENT_PLURAL_PENALTY: f64 = -5.0;
 const STATIVE_TRANSITIVE_PREFIX: f64 = -30.0;
 // Stative verb with an imperative prefix - grammatically valid but rare.
 const STATIVE_IMPERATIVE_PREFIX: f64 = -3.0;
-// Stative verb with a Type 2 (predisposition/volition) suffix — semantically
+// Stative verb with a Type 2 (predisposition/volition) suffix - semantically
 // incoherent: "ready to be green" etc. The suffix presupposes an action, so
 // prefer a non-stative homophone of the stem when one exists.
 const STATIVE_VOLITIONAL_SUFFIX: f64 = -30.0;
@@ -196,7 +196,12 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
     let affix_count = h
         .components
         .iter()
-        .filter(|c| matches!(c.role, MorphemeRole::Prefix | MorphemeRole::Suffix | MorphemeRole::Rover))
+        .filter(|c| {
+            matches!(
+                c.role,
+                MorphemeRole::Prefix | MorphemeRole::Suffix | MorphemeRole::Rover
+            )
+        })
         .count();
     s += affix_count as f64 * AFFIX_PENALTY;
 
@@ -204,10 +209,7 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
     // Volitional-suffix check: Type 2 suffixes (need/ready/willing/afraid)
     // presuppose an action and don't combine with stative readings.
     if h.parse_type == ParseType::Verb {
-        let prefix = h
-            .components
-            .iter()
-            .find(|c| c.role == MorphemeRole::Prefix);
+        let prefix = h.components.iter().find(|c| c.role == MorphemeRole::Prefix);
         let homo = stem.map(|s| s.homophone.unwrap_or(0)).unwrap_or(0);
         let is_stative = dict.lookup(stem_name).map_or(false, |es| {
             es.iter().any(|e| e.homophone == homo && e.stative)
@@ -253,8 +255,7 @@ pub fn score(h: &Hypothesis, dict: &Dictionary) -> f64 {
             .next()
             .unwrap_or(&stem.pos);
         let pos_freq = dict.pos_frequency(&stem.entry_name, base_pos);
-        s += pos_freq.saturating_sub(POS_FREQ_BASELINE).min(10) as f64
-            * POS_FREQ_PER_OCCURRENCE;
+        s += pos_freq.saturating_sub(POS_FREQ_BASELINE).min(10) as f64 * POS_FREQ_PER_OCCURRENCE;
     }
 
     // Warning-based penalties.
@@ -305,16 +306,8 @@ pub fn compare(a: &Hypothesis, b: &Hypothesis) -> Ordering {
         })
         .then_with(|| {
             // Alphabetical by first component POS.
-            let a_pos = a
-                .components
-                .first()
-                .map(|c| c.pos.as_str())
-                .unwrap_or("");
-            let b_pos = b
-                .components
-                .first()
-                .map(|c| c.pos.as_str())
-                .unwrap_or("");
+            let a_pos = a.components.first().map(|c| c.pos.as_str()).unwrap_or("");
+            let b_pos = b.components.first().map(|c| c.pos.as_str()).unwrap_or("");
             a_pos.cmp(b_pos)
         })
 }

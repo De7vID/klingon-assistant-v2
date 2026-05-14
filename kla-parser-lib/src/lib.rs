@@ -1,9 +1,9 @@
-pub mod types;
+pub mod confidence;
 pub mod dictionary;
 pub mod morphology;
-pub mod confidence;
-pub mod sentence;
 pub mod output;
+pub mod sentence;
+pub mod types;
 
 pub use dictionary::Dictionary;
 pub use morphology::parse_word;

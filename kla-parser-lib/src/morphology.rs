@@ -59,9 +59,7 @@ const POSSESSIVE_NON_BEING: &[&str] = &["wIj", "lIj", "maj", "raj"];
 const KLINGON_VOWELS: &[char] = &['a', 'e', 'I', 'o', 'u'];
 
 // The 8 Klingon pronouns that can act as copular verbs (TKD 6.3).
-const PRONOUNS: &[&str] = &[
-    "jIH", "SoH", "ghaH", "'oH", "maH", "tlhIH", "chaH", "bIH",
-];
+const PRONOUNS: &[&str] = &["jIH", "SoH", "ghaH", "'oH", "maH", "tlhIH", "chaH", "bIH"];
 
 // Only {-laH} from verb type 5 is permitted on copular pronouns.
 const COPULA_TYPE5: &[&str] = &["laH"];
@@ -71,9 +69,7 @@ const COPULA_TYPE5: &[&str] = &["laH"];
 const NUMBER_DIGITS: &[&str] = &[
     "pagh", "wa'", "cha'", "wej", "loS", "vagh", "jav", "Soch", "chorgh", "Hut",
 ];
-const NUMBER_MULTIPLIERS: &[&str] = &[
-    "maH", "vatlh", "SaD", "SanID", "netlh", "bIp", "'uy'",
-];
+const NUMBER_MULTIPLIERS: &[&str] = &["maH", "vatlh", "SaD", "SanID", "netlh", "bIp", "'uy'"];
 
 // ---------------------------------------------------------------------------
 // Sub-component parsing for whole-word entries
@@ -122,7 +118,10 @@ pub(crate) fn parse_components_str(components: &str) -> Vec<Component> {
         let (role, text) = if entry_name.starts_with('-') {
             (MorphemeRole::Suffix, entry_name[1..].to_string())
         } else if entry_name.ends_with('-') {
-            (MorphemeRole::Prefix, entry_name[..entry_name.len() - 1].to_string())
+            (
+                MorphemeRole::Prefix,
+                entry_name[..entry_name.len() - 1].to_string(),
+            )
         } else {
             (MorphemeRole::Stem, entry_name.to_string())
         };
@@ -142,7 +141,10 @@ pub(crate) fn parse_components_str(components: &str) -> Vec<Component> {
                     continue;
                 }
                 if t.chars().next().map_or(false, |c| c.is_ascii_digit()) {
-                    if let Ok(n) = t.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u8>() {
+                    if let Ok(n) = t
+                        .trim_end_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u8>()
+                    {
                         homophone = Some(n);
                     }
                     kept.push(t);
@@ -152,11 +154,11 @@ pub(crate) fn parse_components_str(components: &str) -> Vec<Component> {
                 } else {
                     // Keep non-internal tags.
                     const INTERNAL: &[&str] = &[
-                        "alt", "klcp1", "t_c", "i_c", "is", "t", "i", "ambi", "anim",
-                        "being", "body", "deiv", "deri", "deriv", "epithet", "extcan",
-                        "fic", "food", "idiom", "nodict", "noanki", "person", "place",
-                        "plural", "reg", "terran", "weap", "inhpl", "inhps", "slang",
-                        "archaic", "hyp", "nolink", "suff", "pref",
+                        "alt", "klcp1", "t_c", "i_c", "is", "t", "i", "ambi", "anim", "being",
+                        "body", "deiv", "deri", "deriv", "epithet", "extcan", "fic", "food",
+                        "idiom", "nodict", "noanki", "person", "place", "plural", "reg", "terran",
+                        "weap", "inhpl", "inhps", "slang", "archaic", "hyp", "nolink", "suff",
+                        "pref",
                     ];
                     if !INTERNAL.contains(&t) {
                         kept.push(t);
@@ -244,7 +246,11 @@ pub fn parse_word(word: &str, dict: &Dictionary) -> WordParse {
     hypotheses.extend(pronoun_hypotheses(word, dict));
 
     // F. Unknown fallback (always present).
-    if hypotheses.is_empty() || !hypotheses.iter().any(|h| h.parse_type == ParseType::WholeWord) {
+    if hypotheses.is_empty()
+        || !hypotheses
+            .iter()
+            .any(|h| h.parse_type == ParseType::WholeWord)
+    {
         hypotheses.push(Hypothesis {
             components: vec![Component {
                 text: word.to_string(),
@@ -344,7 +350,11 @@ fn add_wholeword_hypotheses(
 /// Resolve all stem POS and homophone variants from dictionary entries.
 /// Returns one (canonical_pos, homophone) pair per matching entry. If no entry
 /// matches `preferred_base_pos`, falls back to the first entry.
-fn resolve_stem_all(dict: &Dictionary, stem: &str, preferred_base_pos: &str) -> Vec<(String, Option<u8>)> {
+fn resolve_stem_all(
+    dict: &Dictionary,
+    stem: &str,
+    preferred_base_pos: &str,
+) -> Vec<(String, Option<u8>)> {
     let entries = match dict.lookup(stem) {
         Some(es) => es,
         None => return vec![(String::new(), None)],
@@ -380,7 +390,12 @@ fn resolve_stem_all(dict: &Dictionary, stem: &str, preferred_base_pos: &str) -> 
 
 /// Check if a possessive suffix mismatches the stem's being/non-being status.
 /// Adds a warning if a being noun uses a non-being suffix or vice versa.
-fn check_possessive_mismatch(dict: &Dictionary, stem: &str, suffix: &str, warnings: &mut Vec<String>) {
+fn check_possessive_mismatch(
+    dict: &Dictionary,
+    stem: &str,
+    suffix: &str,
+    warnings: &mut Vec<String>,
+) {
     let entries = match dict.lookup(stem) {
         Some(es) => es,
         None => return,
@@ -469,9 +484,7 @@ fn verb_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
             // Build suffix components once (shared across stem variants).
             let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
             let has_ghach = reversed.iter().any(|(_, m)| m.is_ghach);
-            let real_verb_suffixes = reversed
-                .iter()
-                .any(|(_, m)| !m.is_ghach && !m.is_rover);
+            let real_verb_suffixes = reversed.iter().any(|(_, m)| !m.is_ghach && !m.is_rover);
             let ghach_warning = if has_ghach && !real_verb_suffixes {
                 Some("-ghach used without a preceding verb suffix".to_string())
             } else {
@@ -551,9 +564,8 @@ fn verb_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
 fn noun_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
     let mut out = Vec::new();
 
-    let noun_suffix_types: &[&[&str]] = &[
-        NOUN_TYPE5, NOUN_TYPE4, NOUN_TYPE3, NOUN_TYPE2, NOUN_TYPE1,
-    ];
+    let noun_suffix_types: &[&[&str]] =
+        &[NOUN_TYPE5, NOUN_TYPE4, NOUN_TYPE3, NOUN_TYPE2, NOUN_TYPE1];
 
     let completions = enumerate_suffixes(word, noun_suffix_types, "n", false);
 
@@ -630,11 +642,7 @@ fn noun_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
 /// Handle the special -'oy suffix where the apostrophe is part of the suffix
 /// but the stem must end in a vowel. We try stripping "'oy" after any outer
 /// noun suffixes have been stripped.
-fn try_special_oy(
-    word: &str,
-    outer_types: &[&[&str]],
-    dict: &Dictionary,
-) -> Vec<Hypothesis> {
+fn try_special_oy(word: &str, outer_types: &[&[&str]], dict: &Dictionary) -> Vec<Hypothesis> {
     let mut results = Vec::new();
 
     // First strip outer suffixes (types 5 through 2), then check for 'oy at type 1 position.
@@ -727,7 +735,7 @@ fn adjectival_verb_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> 
             if stem.is_empty() {
                 continue;
             }
-            // Skip bare stem with no verb suffixes — that would duplicate noun hypotheses.
+            // Skip bare stem with no verb suffixes - that would duplicate noun hypotheses.
             // (We always have the type-5 noun suffix, so this path is still useful.)
 
             // Build verb suffix components (reversed to innermost-first order).
@@ -883,9 +891,7 @@ fn pronoun_hypotheses(word: &str, dict: &Dictionary) -> Vec<Hypothesis> {
         // Build suffix components (shared across stem variants).
         let reversed: Vec<_> = suffixes.iter().rev().cloned().collect();
         let has_ghach = reversed.iter().any(|(_, m)| m.is_ghach);
-        let real_verb_suffixes = reversed
-            .iter()
-            .any(|(_, m)| !m.is_ghach && !m.is_rover);
+        let real_verb_suffixes = reversed.iter().any(|(_, m)| !m.is_ghach && !m.is_rover);
         let ghach_warning = if has_ghach && !real_verb_suffixes {
             Some("-ghach used without a preceding verb suffix".to_string())
         } else {
@@ -988,8 +994,7 @@ fn enumerate_suffixes(
 
                     // Optionally strip rovers at this position.
                     if allow_rovers {
-                        let rover_variants =
-                            strip_rovers_all_combos(&new_remainder, pos);
+                        let rover_variants = strip_rovers_all_combos(&new_remainder, pos);
                         for (rover_rem, rover_suffixes) in rover_variants {
                             let mut combined = new_suffixes.clone();
                             combined.extend(rover_suffixes);
@@ -1009,8 +1014,7 @@ fn enumerate_suffixes(
 
             // Also try stripping rovers without a suffix at this position.
             if allow_rovers {
-                let rover_variants =
-                    strip_rovers_all_combos(&partial.remainder, pos);
+                let rover_variants = strip_rovers_all_combos(&partial.remainder, pos);
                 for (rover_rem, rover_suffixes) in &rover_variants {
                     if !rover_suffixes.is_empty() {
                         let mut new_suffixes = partial.suffixes.clone();

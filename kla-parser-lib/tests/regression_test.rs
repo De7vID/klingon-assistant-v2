@@ -85,18 +85,12 @@ fn ghach_without_suffix_warns() {
     let d = dict();
     // {lobghach} = {lob} + {-ghach}, but no other verb suffix before {-ghach}.
     let result = parse_word("lobghach", &d);
-    let verb = result
-        .hypotheses
-        .iter()
-        .find(|h| {
-            h.parse_type == ParseType::Verb
-                && h.components.iter().any(|c| c.entry_name == "-ghach")
-        });
+    let verb = result.hypotheses.iter().find(|h| {
+        h.parse_type == ParseType::Verb && h.components.iter().any(|c| c.entry_name == "-ghach")
+    });
     if let Some(v) = verb {
         assert!(
-            v.warnings
-                .iter()
-                .any(|w| w.contains("-ghach")),
+            v.warnings.iter().any(|w| w.contains("-ghach")),
             "-ghach without preceding suffix should warn"
         );
     }
@@ -318,7 +312,7 @@ fn noun_after_possessive_stays_noun() {
 
 #[test]
 fn nxv_non_stative_middle_word_is_noun() {
-    // {qIrq qun vIqImchoH} — {qun} is non-stative; in N-X-V context the
+    // {qIrq qun vIqImchoH} - {qun} is non-stative; in N-X-V context the
     // middle word can't be the clause's main verb, so it must be a noun
     // (genitive). Expected: {qIrq:n:name}, {qun:n}, ...
     let d = dict();
@@ -332,7 +326,7 @@ fn nxv_non_stative_middle_word_is_noun() {
 
 #[test]
 fn nxv_stative_middle_word_keeps_verb() {
-    // {DoS tIn yIbuS} = "Concentrate on the big target" — {tIn} is stative,
+    // {DoS tIn yIbuS} = "Concentrate on the big target" - {tIn} is stative,
     // so its adjectival use is grammatical. The N-X-V heuristic must leave
     // ranking to confidence rather than forcing a noun reading.
     let d = dict();

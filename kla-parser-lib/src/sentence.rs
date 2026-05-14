@@ -28,7 +28,7 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
             let spans_whole_input = i == 0 && i + window == words.len();
 
             // Exact compound match. If the bare lookup misses, retry with the
-            // punctuation that was stripped from the window's last word — some
+            // punctuation that was stripped from the window's last word; some
             // entries (notably {tlhIngan maH!:sen}) store the trailing
             // punctuation in their entry_name. Only retry when the window
             // ends inside the input; otherwise the punctuation is the
@@ -98,7 +98,7 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
     demote_contextual_adjectival(&mut word_parses);
 
     // Post-process: prefer verb readings for bare words following a noun.
-    prefer_verb_after_noun(&mut word_parses);
+    prefer_verb_after_noun(&mut word_parses, dict);
 
     // Post-process: prefer noun for {wej} after a number ({wa'maH wej} = "thirteen").
     prefer_noun_after_number(&mut word_parses);
@@ -282,7 +282,7 @@ const POSSESSIVE_SUFFIXES: &[&str] = &[
 /// Prefer verb readings for ambiguous bare words that follow a noun phrase.
 /// In Klingon OVS word order, a bare word after a noun is more likely a verb
 /// (the noun is its object) than another noun.
-fn prefer_verb_after_noun(parses: &mut [WordParse]) {
+fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
     for i in 1..parses.len() {
         // Check if the preceding word's top hypothesis is a noun.
         let prev_top = match parses[i - 1].hypotheses.first() {
@@ -298,13 +298,13 @@ fn prefer_verb_after_noun(parses: &mut [WordParse]) {
             continue;
         }
 
-        // Skip numbers — after a number, the next word is far more likely a
+        // Skip numbers - after a number, the next word is far more likely a
         // noun being counted than a verb (e.g., {wa' ram} = "one night").
         if prev_first_pos.contains("num") {
             continue;
         }
 
-        // Skip if the preceding noun ends with a possessive suffix — the NP
+        // Skip if the preceding noun ends with a possessive suffix - the NP
         // is complete and the next word is likely a noun (genitive pattern,
         // e.g., {SoSlI' Quch} = "your mother's forehead").
         let prev_ends_possessive = prev_top
@@ -315,10 +315,37 @@ fn prefer_verb_after_noun(parses: &mut [WordParse]) {
             continue;
         }
 
-        // Skip pronouns — after a noun they function as copulas, not verbs
+        // Skip pronouns - after a noun they function as copulas, not verbs
         // (e.g., {tlhIngan jIH} = "I am a Klingon").
         if PRONOUNS.contains(&parses[i].word.as_str()) {
             continue;
+        }
+
+        // When the *next* word is itself a verb, this word can't be the
+        // clause's main verb (two whole-word main verbs can't share one
+        // Klingon clause). Decide between adjectival use and a genitive
+        // noun by checking whether the verb reading is stative - only
+        // stative verbs can function adjectivally. If non-stative, the
+        // structure must be noun-noun-verb (e.g. {qIrq qun vIqImchoH}),
+        // so promote the noun reading. If stative, the adjectival reading
+        // is grammatical (e.g., {DoS tIn yIbuS}), so leave confidence to
+        // decide.
+        if i + 1 < parses.len() {
+            let next_is_verb = parses[i + 1]
+                .hypotheses
+                .first()
+                .map_or(false, |h| {
+                    h.parse_type == ParseType::Verb
+                        || h.components
+                            .first()
+                            .map_or(false, |c| c.pos.starts_with("v"))
+                });
+            if next_is_verb {
+                if !has_stative_verb_reading(&parses[i], dict) {
+                    prefer_noun(&mut parses[i]);
+                }
+                continue;
+            }
         }
 
         // Only intervene if the word has both noun and verb WholeWord readings,
@@ -338,6 +365,42 @@ fn prefer_verb_after_noun(parses: &mut [WordParse]) {
 
         if has_noun_ww && has_verb_ww && !noun_is_number {
             prefer_verb(&mut parses[i]);
+        }
+    }
+}
+
+/// Check whether any whole-word verb hypothesis for this word has a stem
+/// that the dictionary tags as stative (and therefore eligible for
+/// adjectival use).
+fn has_stative_verb_reading(wp: &WordParse, dict: &Dictionary) -> bool {
+    wp.hypotheses.iter().any(|h| {
+        if h.parse_type != ParseType::WholeWord {
+            return false;
+        }
+        let stem = match h.components.first() {
+            Some(c) if c.pos.starts_with("v") => c,
+            _ => return false,
+        };
+        let homo = stem.homophone.unwrap_or(0);
+        dict.lookup(&stem.entry_name).map_or(false, |entries| {
+            entries
+                .iter()
+                .any(|e| e.stative && e.homophone == homo)
+        })
+    })
+}
+
+/// Promote the first whole-word noun hypothesis to the top.
+fn prefer_noun(wp: &mut WordParse) {
+    if let Some(pos) = wp.hypotheses.iter().position(|h| {
+        h.parse_type == ParseType::WholeWord
+            && h.components
+                .first()
+                .map_or(false, |c| c.pos.starts_with("n"))
+    }) {
+        if pos > 0 {
+            let noun = wp.hypotheses.remove(pos);
+            wp.hypotheses.insert(0, noun);
         }
     }
 }
@@ -374,7 +437,7 @@ fn prefer_num_reading(wp: &mut WordParse) {
 }
 
 /// After a number, prefer noun over adverb for ambiguous words.
-/// E.g., {wa'maH wej} = "thirteen" — {wej} is noun "three", not adverb "not yet".
+/// e.g., {wa'maH wej} = "thirteen" - {wej} is noun "three", not adverb "not yet".
 fn prefer_noun_after_number(parses: &mut [WordParse]) {
     for i in 1..parses.len() {
         let prev_is_number = parses[i - 1]
@@ -612,7 +675,7 @@ fn try_compound_suffix(window: &[String], dict: &Dictionary) -> Option<WordParse
 }
 
 /// Split a sentence into words, handling punctuation correctly.
-/// Apostrophe (') is NEVER treated as punctuation — it is a Klingon letter.
+/// Apostrophe (') is NEVER treated as punctuation - it is a Klingon letter.
 ///
 /// Returns both the stripped words and, for each, the trailing punctuation
 /// that was removed (or None). The punctuation is preserved so callers can

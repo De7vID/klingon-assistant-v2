@@ -247,12 +247,20 @@ fn rewrite_comparative(parses: &mut Vec<WordParse>) {
 
             // The word before {law'} and before {puS} is the quality verb Q, and
             // it must be the same word. Prefer the verb hypothesis for both.
+            // The word before each Q is the X / Y slot of the comparison, and
+            // is overwhelmingly a noun ("X is more Q than Y"); bias to noun.
             if li > 0 && pi > 0 {
                 let q_before_law = li - 1;
                 let q_before_pus = pi - 1;
                 if parses[q_before_law].word == parses[q_before_pus].word {
                     prefer_verb(&mut parses[q_before_law]);
                     prefer_verb(&mut parses[q_before_pus]);
+                    if q_before_law >= 1 {
+                        prefer_noun(&mut parses[q_before_law - 1]);
+                    }
+                    if q_before_pus >= 1 && q_before_pus - 1 > li {
+                        prefer_noun(&mut parses[q_before_pus - 1]);
+                    }
                 }
             }
         }

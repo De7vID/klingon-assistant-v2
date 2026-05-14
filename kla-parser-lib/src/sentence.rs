@@ -379,9 +379,10 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
         // noun by checking whether the verb reading is stative - only
         // stative verbs can function adjectivally. If non-stative, the
         // structure must be noun-noun-verb (e.g. {qIrq qun vIqImchoH}),
-        // so promote the noun reading. If stative, the adjectival reading
-        // is grammatical (e.g., {DoS tIn yIbuS}), so leave confidence to
-        // decide.
+        // so promote the noun reading. If stative, the word is acting
+        // adjectivally on the preceding noun (e.g., {He chu' ghoS} "new
+        // course") - prefer the stative verb reading explicitly so a
+        // non-stative homophone doesn't win on confidence alone.
         if i + 1 < parses.len() {
             let next_is_verb = parses[i + 1]
                 .hypotheses
@@ -393,7 +394,9 @@ fn prefer_verb_after_noun(parses: &mut [WordParse], dict: &Dictionary) {
                             .map_or(false, |c| c.pos.starts_with("v"))
                 });
             if next_is_verb {
-                if !has_stative_verb_reading(&parses[i], dict) {
+                if has_stative_verb_reading(&parses[i], dict) {
+                    prefer_stative_verb(&mut parses[i], dict);
+                } else {
                     prefer_noun(&mut parses[i]);
                 }
                 continue;
@@ -453,6 +456,33 @@ fn prefer_noun(wp: &mut WordParse) {
         if pos > 0 {
             let noun = wp.hypotheses.remove(pos);
             wp.hypotheses.insert(0, noun);
+        }
+    }
+}
+
+/// Promote the highest-scoring stative-verb whole-word hypothesis to the
+/// top, leaving non-stative verb homophones below. Used when an ambiguous
+/// word is sandwiched between a noun and a verb and must function
+/// adjectivally on the preceding noun.
+fn prefer_stative_verb(wp: &mut WordParse, dict: &Dictionary) {
+    if let Some(pos) = wp.hypotheses.iter().position(|h| {
+        if h.parse_type != ParseType::WholeWord {
+            return false;
+        }
+        let stem = match h.components.first() {
+            Some(c) if c.pos.starts_with("v") => c,
+            _ => return false,
+        };
+        let homo = stem.homophone.unwrap_or(0);
+        dict.lookup(&stem.entry_name).map_or(false, |entries| {
+            entries
+                .iter()
+                .any(|e| e.stative && e.homophone == homo)
+        })
+    }) {
+        if pos > 0 {
+            let stative = wp.hypotheses.remove(pos);
+            wp.hypotheses.insert(0, stative);
         }
     }
 }

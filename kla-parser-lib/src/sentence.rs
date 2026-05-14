@@ -172,7 +172,9 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
 /// can't be aligned to per-word hypotheses, so this step only fires when the
 /// canonical stems align one-to-one with surface words.
 fn prefer_canonical_components(parses: &mut [WordParse], input: &str, dict: &Dictionary) {
-    let Some(components) = dict.canonical_components(input) else {
+    // Sentence entries are keyed by their trimmed entry_name; parsing trims
+    // input via `split_sentence`, so do the same here for the lookup.
+    let Some(components) = dict.canonical_components(input.trim()) else {
         return;
     };
     let stems = extract_canonical_stems(components);
@@ -185,7 +187,10 @@ fn prefer_canonical_components(parses: &mut [WordParse], input: &str, dict: &Dic
 }
 
 /// Walk through a bracketed components string and return one (entry_name,
-/// base_pos) tuple per stem (skipping prefixes and suffixes).
+/// base_pos) tuple per stem (skipping prefixes, suffixes, and sentence
+/// references). `:sen` references are excluded for the same reason the corpus
+/// POS-frequency builder excludes them (see `extract_base_pos` in
+/// `dictionary.rs`): they aren't dictionary stems with a POS reading.
 fn extract_canonical_stems(components: &str) -> Vec<(String, String)> {
     let mut stems = Vec::new();
     for token in components.split(", ") {
@@ -211,6 +216,9 @@ fn extract_canonical_stems(components: &str) -> Vec<(String, String)> {
             .split(',')
             .next()
             .unwrap_or(pos_part);
+        if base_pos == "sen" {
+            continue;
+        }
         stems.push((entry_name.to_string(), base_pos.to_string()));
     }
     stems

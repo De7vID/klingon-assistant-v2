@@ -16,7 +16,9 @@ pub struct Dictionary {
     /// annotated sentences (e.g., {'ej:conj} over the archaic {'ej:n:hyp}).
     pos_freq: HashMap<String, HashMap<String, u32>>,
     /// Map from sentence entry_name to its annotated components string.
-    /// Used to short-circuit parsing for sentences already in the dictionary.
+    /// Consulted by `prefer_canonical_components` to promote the hypothesis
+    /// for each surface word that matches the dictionary's annotation when
+    /// the input exactly matches a known sentence entry.
     canonical_components: HashMap<String, String>,
     /// Subset of canonical_components for archaic sentences, whose components
     /// don't follow modern grammar and must be emitted verbatim.

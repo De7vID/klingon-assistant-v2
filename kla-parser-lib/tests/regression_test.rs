@@ -351,6 +351,19 @@ fn wej_after_number_is_noun() {
 }
 
 #[test]
+fn wej_before_verb_stays_adverb() {
+    // {wej Sop} = "S/he does not yet eat" — {wej:adv} ("not yet") rather
+    // than {wej:n:num} ("three"). Guards the POS_FREQ_BASELINE in
+    // confidence scoring: without the baseline, a marginal corpus POS
+    // count for {wej:n} (~2) would beat {wej:adv} (~1) and flip the
+    // ranking.
+    let d = dict();
+    let parse = kla_parser_lib::parse_sentence("wej Sop", &d);
+    let bracketed = kla_parser_lib::output::sentence_to_bracketed(&parse);
+    assert_eq!(bracketed, "{wej:adv}, {Sop:v}");
+}
+
+#[test]
 fn hyphenated_number_prefers_num() {
     // Digits in a hyphenated number sequence should use the "num" reading.
     let d = dict();

@@ -108,4 +108,10 @@ pub struct EmbeddedData {
 pub struct SentenceEntry {
     pub entry_name: String,
     pub components: String,
+    /// True for fixed archaic expressions ({wIj jup}, {ghIj qet jaghmeyjaj.})
+    /// whose components do not follow modern Klingon grammar and cannot be
+    /// derived from morphological rules. The parser bypasses normal parsing
+    /// for these and emits the stored components verbatim.
+    #[serde(default)]
+    pub archaic: bool,
 }

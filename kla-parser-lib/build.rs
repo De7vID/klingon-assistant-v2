@@ -33,6 +33,7 @@ struct DictEntryRaw {
 struct SentenceRaw {
     entry_name: String,
     components: String,
+    archaic: bool,
 }
 
 fn main() {
@@ -92,11 +93,15 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                 if pos_raw.starts_with("sen:") {
                     // Sentence entry. Skip templates — they have placeholders
                     // that cannot be parsed without being filled in.
-                    if !pos_raw.contains("tmpl") && !pos_raw.contains("archaic") {
+                    if !pos_raw.contains("tmpl") {
+                        let archaic = pos_raw
+                            .split(|c: char| c == ',' || c == ':')
+                            .any(|t| t == "archaic");
                         if !components.is_empty() {
                             sentences.push(SentenceRaw {
                                 entry_name: entry_name.clone(),
                                 components: components.clone(),
+                                archaic,
                             });
                         }
                         // Sentence entries are exposed as whole-word lookups
@@ -106,12 +111,15 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                         // {tlhIngan maH!:sen}, {jISaHbe'.:sen}). Single-word
                         // sentences without terminal punctuation are left
                         // out — they would shadow morphological decomposition
-                        // for ordinary inflected verbs (e.g. {bIyaj}).
+                        // for ordinary inflected verbs (e.g. {bIyaj}). Archaic
+                        // sentences are also left out — they have a dedicated
+                        // bypass in parse_sentence that emits the stored
+                        // components verbatim.
                         let has_terminal_punct = entry_name
                             .chars()
                             .last()
                             .map_or(false, |c| matches!(c, '.' | '!' | '?' | ',' | ';'));
-                        if entry_name.contains(' ') || has_terminal_punct {
+                        if !archaic && (entry_name.contains(' ') || has_terminal_punct) {
                             entries.push(DictEntryRaw {
                                 name: entry_name.clone(),
                                 pos: "sen".to_string(),

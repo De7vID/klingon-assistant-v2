@@ -18,6 +18,9 @@ pub struct Dictionary {
     /// Map from sentence entry_name to its annotated components string.
     /// Used to short-circuit parsing for sentences already in the dictionary.
     canonical_components: HashMap<String, String>,
+    /// Subset of canonical_components for archaic sentences, whose components
+    /// don't follow modern grammar and must be emitted verbatim.
+    archaic_sentence_components: HashMap<String, String>,
 }
 
 impl Dictionary {
@@ -42,6 +45,12 @@ impl Dictionary {
             .filter(|s| !s.components.is_empty())
             .map(|s| (s.entry_name.clone(), s.components.clone()))
             .collect();
+        let archaic_sentence_components = data
+            .sentences
+            .iter()
+            .filter(|s| s.archaic && !s.components.is_empty())
+            .map(|s| (s.entry_name.clone(), s.components.clone()))
+            .collect();
 
         Self {
             entries,
@@ -49,6 +58,7 @@ impl Dictionary {
             homophone_freq,
             pos_freq,
             canonical_components,
+            archaic_sentence_components,
         }
     }
 
@@ -99,6 +109,16 @@ impl Dictionary {
     /// exactly matches `input`, if such an entry exists.
     pub fn canonical_components(&self, input: &str) -> Option<&str> {
         self.canonical_components.get(input).map(|s| s.as_str())
+    }
+
+    /// Return the annotated components for an archaic sentence whose
+    /// `entry_name` exactly matches `input`. Archaic sentences ({wIj jup},
+    /// {ghIj qet jaghmeyjaj.}) have fixed historical components that can't
+    /// be derived by morphological parsing.
+    pub fn archaic_sentence_components(&self, input: &str) -> Option<&str> {
+        self.archaic_sentence_components
+            .get(input)
+            .map(|s| s.as_str())
     }
 }
 

@@ -8,6 +8,29 @@ use crate::types::*;
 /// Parse a Klingon sentence into morphological components.
 /// Tries multi-word dictionary lookups before falling back to single-word parsing.
 pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
+    // Archaic fixed expressions whose components don't follow modern grammar
+    // (e.g. {wIj jup}, {ghIj qet jaghmeyjaj.}). Emit the stored components
+    // verbatim, packed into a single synthetic WordParse so the bracketed
+    // output reproduces them in order.
+    if let Some(components) = dict.archaic_sentence_components(input.trim()) {
+        let parsed = morphology::parse_components_str(components);
+        if !parsed.is_empty() {
+            let hyp = Hypothesis {
+                components: parsed,
+                confidence: 100.0,
+                parse_type: ParseType::WholeWord,
+                warnings: vec![],
+            };
+            return SentenceParse {
+                input: input.to_string(),
+                words: vec![WordParse {
+                    word: input.to_string(),
+                    hypotheses: vec![hyp],
+                }],
+            };
+        }
+    }
+
     let (words, trailing_punct) = split_sentence(input);
     let mut word_parses = Vec::new();
     let mut i = 0;

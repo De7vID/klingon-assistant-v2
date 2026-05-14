@@ -84,7 +84,28 @@ pub fn parse_sentence(input: &str, dict: &Dictionary) -> SentenceParse {
                     word_parses.push(wp);
                 }
             } else {
-                word_parses.push(morphology::parse_word(w, dict));
+                let mut wp = morphology::parse_word(w, dict);
+                // Punctuation retry: some single-word entries store their
+                // terminal punctuation in entry_name (e.g. {jISaHbe'.:sen},
+                // {Hu'tegh!:excl}). split_sentence stripped the punct; if
+                // the bare lookup didn't yield a wholeword hit, retry the
+                // wholeword lookup with the stripped punctuation reattached.
+                let bare_hit = wp
+                    .hypotheses
+                    .iter()
+                    .any(|h| h.parse_type == ParseType::WholeWord);
+                if !bare_hit {
+                    if let Some(p) = trailing_punct[i] {
+                        let with_punct = format!("{w}{p}");
+                        morphology::add_wholeword_hypotheses_and_rescore(
+                            &mut wp,
+                            w,
+                            &with_punct,
+                            dict,
+                        );
+                    }
+                }
+                word_parses.push(wp);
             }
             i += 1;
         }

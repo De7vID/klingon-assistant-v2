@@ -97,14 +97,19 @@ fn process_xml(xml: &str, entries: &mut Vec<DictEntryRaw>, sentences: &mut Vec<S
                                 components: components.clone(),
                             });
                         }
-                        // Multi-word sentence entries are also exposed as
-                        // whole-word lookups so the compound matcher in
-                        // parse_sentence can find them when they appear inside
-                        // a larger sentence (e.g. {tlhIngan maH!:sen}).
-                        // Single-word sentences are left out — they should
-                        // decompose morphologically rather than match as a
-                        // single sen wholeword.
-                        if entry_name.contains(' ') {
+                        // Sentence entries are exposed as whole-word lookups
+                        // so the compound matcher in parse_sentence (and the
+                        // punctuation-retry in parse_word) can find them when
+                        // they appear inside a larger sentence (e.g.
+                        // {tlhIngan maH!:sen}, {jISaHbe'.:sen}). Single-word
+                        // sentences without terminal punctuation are left
+                        // out — they would shadow morphological decomposition
+                        // for ordinary inflected verbs (e.g. {bIyaj}).
+                        let has_terminal_punct = entry_name
+                            .chars()
+                            .last()
+                            .map_or(false, |c| matches!(c, '.' | '!' | '?' | ',' | ';'));
+                        if entry_name.contains(' ') || has_terminal_punct {
                             entries.push(DictEntryRaw {
                                 name: entry_name.clone(),
                                 pos: "sen".to_string(),

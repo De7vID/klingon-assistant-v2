@@ -226,33 +226,7 @@ pub fn parse_word(word: &str, dict: &Dictionary) -> WordParse {
     let mut hypotheses = Vec::new();
 
     // A. Whole-word hypotheses.
-    if let Some(entries) = dict.lookup(word) {
-        for entry in entries {
-            let sub_components = if !entry.components.is_empty() {
-                parse_components_str(&entry.components)
-            } else {
-                vec![]
-            };
-            let comp = Component {
-                text: word.to_string(),
-                entry_name: word.to_string(),
-                pos: entry.canonical_pos.clone(),
-                homophone: if entry.homophone > 0 {
-                    Some(entry.homophone)
-                } else {
-                    None
-                },
-                role: MorphemeRole::Stem,
-                sub_components,
-            };
-            hypotheses.push(Hypothesis {
-                components: vec![comp],
-                confidence: 0.0, // Scored later.
-                parse_type: ParseType::WholeWord,
-                warnings: vec![],
-            });
-        }
-    }
+    add_wholeword_hypotheses(&mut hypotheses, word, word, dict);
 
     // B. Verb hypotheses.
     hypotheses.extend(verb_hypotheses(word, dict));
@@ -298,6 +272,68 @@ pub fn parse_word(word: &str, dict: &Dictionary) -> WordParse {
     WordParse {
         word: word.to_string(),
         hypotheses,
+    }
+}
+
+/// Add WholeWord hypotheses for `lookup_key` to an already-parsed `wp`,
+/// scoring and re-sorting as needed. Used by callers (notably the
+/// punctuation-retry path in `sentence::parse_sentence`) that need to
+/// retry the wholeword lookup after `parse_word` has already returned.
+pub(crate) fn add_wholeword_hypotheses_and_rescore(
+    wp: &mut WordParse,
+    text: &str,
+    lookup_key: &str,
+    dict: &Dictionary,
+) {
+    let before = wp.hypotheses.len();
+    add_wholeword_hypotheses(&mut wp.hypotheses, text, lookup_key, dict);
+    if wp.hypotheses.len() == before {
+        return;
+    }
+    for h in &mut wp.hypotheses[before..] {
+        h.confidence = confidence::score(h, dict);
+    }
+    wp.hypotheses.sort_by(confidence::compare);
+    dedup_hypotheses(&mut wp.hypotheses);
+}
+
+/// Look up `lookup_key` in the dictionary and append a WholeWord hypothesis
+/// for each matching entry. The component's `text` is the surface form;
+/// `entry_name` is the dictionary key (which may differ when the lookup
+/// includes reattached terminal punctuation).
+fn add_wholeword_hypotheses(
+    out: &mut Vec<Hypothesis>,
+    text: &str,
+    lookup_key: &str,
+    dict: &Dictionary,
+) {
+    let Some(entries) = dict.lookup(lookup_key) else {
+        return;
+    };
+    for entry in entries {
+        let sub_components = if !entry.components.is_empty() {
+            parse_components_str(&entry.components)
+        } else {
+            vec![]
+        };
+        let comp = Component {
+            text: text.to_string(),
+            entry_name: lookup_key.to_string(),
+            pos: entry.canonical_pos.clone(),
+            homophone: if entry.homophone > 0 {
+                Some(entry.homophone)
+            } else {
+                None
+            },
+            role: MorphemeRole::Stem,
+            sub_components,
+        };
+        out.push(Hypothesis {
+            components: vec![comp],
+            confidence: 0.0, // Scored later.
+            parse_type: ParseType::WholeWord,
+            warnings: vec![],
+        });
     }
 }
 
